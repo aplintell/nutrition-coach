@@ -4,8 +4,10 @@
   //   labs:  one record per lab test result
   //   meals: one record per saved meal (with a small photo thumbnail), indexed by day (YYYY-MM-DD)
   //   plans: the latest "rest of the day" plan per day, keyed by day
+  //   photos: the full-size meal photo, keyed by meal id, kept only for PHOTO_KEEP_DAYS (app.js)
+  //           (not included in backups, to keep the backup file small)
   var DB_NAME = 'nutrition-coach';
-  var DB_VERSION = 1;
+  var DB_VERSION = 2;
   var dbPromise = null;
 
   function openDb() {
@@ -28,6 +30,10 @@
         }
         if (!db.objectStoreNames.contains('plans')) {
           db.createObjectStore('plans', { keyPath: 'day' });
+        }
+        if (!db.objectStoreNames.contains('photos')) {
+          var photos = db.createObjectStore('photos', { keyPath: 'mealId' });
+          photos.createIndex('day', 'day');
         }
       };
       req.onsuccess = function () {
@@ -101,6 +107,21 @@
       });
     },
 
+    /** Deletes full-size meal photos from days before firstDayToKeep (YYYY-MM-DD). */
+    prunePhotosBefore: function (firstDayToKeep) {
+      return run('photos', 'readwrite', function (s) {
+        var req = s.index('day').openCursor(IDBKeyRange.upperBound(firstDayToKeep, true));
+        req.onsuccess = function () {
+          var cursor = req.result;
+          if (cursor) {
+            cursor.delete();
+            cursor.continue();
+          }
+        };
+        return null;
+      });
+    },
+
     /** Everything, for the backup file. */
     exportAll: function () {
       return Promise.all([
@@ -124,7 +145,7 @@
       if (!data || data.app !== 'nutrition-coach') {
         return Promise.reject(new Error('Đây không phải file sao lưu của ứng dụng này.'));
       }
-      return Promise.all(['labs', 'meals', 'plans'].map(Db.clear)).then(function () {
+      return Promise.all(['labs', 'meals', 'plans', 'photos'].map(Db.clear)).then(function () {
         var writes = [Db.setKv('profile', data.profile || null), Db.setKv('targets', data.targets || null)];
         (data.labs || []).forEach(function (x) {
           writes.push(Db.put('labs', x));

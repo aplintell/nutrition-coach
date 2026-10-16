@@ -14,6 +14,9 @@
   var photoInput = document.getElementById('photoInput');
   var backupInput = document.getElementById('backupInput');
 
+  // Days the full-size meal photo is kept (today counts as day 1); the thumbnail is kept for good.
+  var PHOTO_KEEP_DAYS = 7;
+
   var cap = window.Capacitor;
   var plugins = cap && cap.Plugins ? cap.Plugins : {};
   var isNative = !!(cap && cap.isNativePlatform && cap.isNativePlatform());
@@ -697,6 +700,9 @@
         confidence: r.confidence,
         note: p.note,
         thumb: p.photo ? p.photo.thumb : null
+      }).then(function (mealId) {
+        // The full photo is kept for PHOTO_KEEP_DAYS; the thumbnail above stays for good.
+        return p.photo ? Db.put('photos', { mealId: mealId, day: dayKey(now), dataUrl: p.photo.preview }) : null;
       }).then(function () {
         pending = null;
         location.hash = '#today';
@@ -738,14 +744,20 @@
   // One saved meal
   function renderMeal(id) {
     setScreen('Bữa ăn', 'today', true);
-    return Db.get('meals', id).then(function (m) {
+    return Promise.all([Db.get('meals', id), Db.get('photos', id)]).then(function (r) {
+      var m = r[0];
+      var photo = r[1];
       if (!m) {
         viewEl.appendChild(h('p', { class: 'empty' }, 'Không tìm thấy bữa ăn này.'));
         return;
       }
       titleEl.textContent = m.name;
+      var image = photo ? photo.dataUrl : m.thumb;
       viewEl.appendChild(h('div', { class: 'card' },
-        m.thumb ? h('img', { src: m.thumb, alt: '', style: 'width:100%;border-radius:10px;margin-bottom:10px' }) : null,
+        image ? h('img', { src: image, alt: '', style: 'width:100%;border-radius:10px;margin-bottom:6px' }) : null,
+        m.thumb ? h('p', { class: 'muted small', style: 'margin-top:0' }, photo
+          ? 'Ảnh gốc được giữ ' + PHOTO_KEEP_DAYS + ' ngày, sau đó chỉ còn ảnh nhỏ.'
+          : 'Ảnh gốc đã quá ' + PHOTO_KEEP_DAYS + ' ngày nên chỉ còn ảnh nhỏ.') : null,
         h('p', { class: 'muted small' }, dayTitle(m.day) + ' · ' + m.time + (m.portion !== 1 ? ' · ăn ' + Math.round(m.portion * 100) + '% phần' : '')),
         h('ul', { class: 'items' }, m.items.map(function (i) {
           return h('li', null, i.name + ' — ' + i.portion + ' (~' + fmt(i.grams, 'g') + ' g)');
@@ -761,7 +773,7 @@
         type: 'button',
         onclick: function () {
           if (confirm('Xóa bữa ăn "' + m.name + '"?')) {
-            Db.remove('meals', m.id).then(function () {
+            Promise.all([Db.remove('meals', m.id), Db.remove('photos', m.id)]).then(function () {
               history.back();
             });
           }
@@ -1198,12 +1210,14 @@
       viewEl.appendChild(h('div', { class: 'card' },
         h('h2', null, 'ℹ️ Về ứng dụng'),
         h('p', { class: 'muted small' }, 'Ảnh bữa ăn, hồ sơ và kết quả xét nghiệm được gửi tới Anthropic (Claude) để phân tích mỗi khi bạn bấm phân tích; ngoài ra mọi dữ liệu chỉ lưu trên điện thoại.'),
+        h('p', { class: 'muted small' }, 'Mỗi lần hỏi Claude chỉ gửi dữ liệu của hôm nay (ảnh bữa đang ăn, các bữa trong ngày); các ngày trước không được gửi.'),
+        h('p', { class: 'muted small' }, 'Ảnh gốc của bữa ăn được giữ ' + PHOTO_KEEP_DAYS + ' ngày rồi tự xóa; ảnh nhỏ trong lịch sử được giữ mãi. File sao lưu không gồm ảnh gốc.'),
         h('p', { class: 'muted small' }, 'Số liệu dinh dưỡng là ước tính của AI và có thể sai. Ứng dụng không thay thế bác sĩ hoặc chuyên gia dinh dưỡng.'),
         h('p', { class: 'muted small' }, 'Phiên bản ' + APP_VERSION)));
     });
   }
 
-  var APP_VERSION = '1.1';
+  var APP_VERSION = '1.2';
 
   function exportBackup() {
     Db.exportAll().then(function (data) {
@@ -1312,6 +1326,11 @@
       route();
     }
   });
+
+  // Full-size meal photos older than PHOTO_KEEP_DAYS are cleared out each time the app opens.
+  var keepFrom = new Date();
+  keepFrom.setDate(keepFrom.getDate() - (PHOTO_KEEP_DAYS - 1));
+  Db.prunePhotosBefore(dayKey(keepFrom)).catch(function () {});
 
   route();
 })();
