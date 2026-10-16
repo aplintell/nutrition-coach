@@ -223,11 +223,41 @@
     });
   }
 
-  function pickRawPhoto(title) {
+  function isCancel(err) {
+    return /cancel|no image picked/i.test(err && err.message || '');
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        resolve(reader.result);
+      };
+      reader.onerror = function () {
+        reject(reader.error);
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  /** Outside the app (browser testing): the hidden file box, one or several files. */
+  function pickFromFileInput(multiple) {
+    return new Promise(function (resolve) {
+      photoInput.value = '';
+      photoInput.multiple = !!multiple;
+      photoInput.onchange = function () {
+        resolve(Promise.all(Array.prototype.map.call(photoInput.files || [], readFileAsDataUrl)));
+      };
+      photoInput.click();
+    });
+  }
+
+  // source: 'PROMPT' (ask camera or gallery) or 'CAMERA'
+  function pickRawPhoto(title, source) {
     if (isNative && plugins.Camera) {
       return plugins.Camera.getPhoto({
         resultType: 'dataUrl',
-        source: 'PROMPT',
+        source: source || 'PROMPT',
         quality: 85,
         width: 1600,
         correctOrientation: true,
@@ -239,42 +269,65 @@
       }).then(function (photo) {
         return photo.dataUrl;
       }, function (err) {
-        if (/cancel/i.test(err && err.message || '')) {
+        if (isCancel(err)) {
           return null;
         }
         throw err;
       });
     }
-    return new Promise(function (resolve) {
-      photoInput.value = '';
-      photoInput.onchange = function () {
-        var file = photoInput.files && photoInput.files[0];
-        if (!file) {
-          resolve(null);
-          return;
-        }
-        var reader = new FileReader();
-        reader.onload = function () {
-          resolve(reader.result);
-        };
-        reader.readAsDataURL(file);
-      };
-      photoInput.click();
+    return pickFromFileInput(false).then(function (urls) {
+      return urls[0] || null;
     });
   }
 
-  /** Resolves to { base64, thumb } (1280px JPEG for Claude, small JPEG to keep), or null if cancelled. */
-  function pickPhoto(title) {
-    return pickRawPhoto(title).then(function (dataUrl) {
-      if (!dataUrl) {
-        return null;
-      }
-      return Promise.all([resizeToJpeg(dataUrl, 1280, 0.82), resizeToJpeg(dataUrl, 320, 0.7)]).then(function (r) {
-        return { base64: r[0].split(',')[1], preview: r[0], thumb: r[1] };
-      });
+  /** Several photos from the gallery at once; resolves to a list of data URLs (empty if cancelled). */
+  function pickRawGalleryPhotos() {
+    if (isNative && plugins.Camera) {
+      return plugins.Camera.pickImages({ quality: 85, width: 1600, correctOrientation: true, limit: 10 })
+        .then(function (result) {
+          return Promise.all(result.photos.map(function (p) {
+            return fetch(p.webPath).then(function (res) {
+              return res.blob();
+            }).then(readFileAsDataUrl);
+          }));
+        }, function (err) {
+          if (isCancel(err)) {
+            return [];
+          }
+          throw err;
+        });
+    }
+    return pickFromFileInput(true);
+  }
+
+  /** A 1280px JPEG for Claude, a preview and a small thumbnail to keep. */
+  function preparePhoto(dataUrl) {
+    return Promise.all([resizeToJpeg(dataUrl, 1280, 0.82), resizeToJpeg(dataUrl, 320, 0.7)]).then(function (r) {
+      return { base64: r[0].split(',')[1], preview: r[0], thumb: r[1] };
+    });
+  }
+
+  function reportPhotoError(err) {
+    alert('Không lấy được ảnh: ' + (err && err.message ? err.message : err));
+  }
+
+  /** Resolves to one prepared photo, or null if cancelled. */
+  function pickPhoto(title, source) {
+    return pickRawPhoto(title, source).then(function (dataUrl) {
+      return dataUrl ? preparePhoto(dataUrl) : null;
     }).catch(function (err) {
-      alert('Không lấy được ảnh: ' + (err && err.message ? err.message : err));
+      reportPhotoError(err);
       return null;
+    });
+  }
+
+  /** Resolves to a list of prepared photos chosen from the gallery (empty if cancelled). */
+  function pickGalleryPhotos() {
+    return pickRawGalleryPhotos().then(function (urls) {
+      return Promise.all(urls.map(preparePhoto));
+    }).catch(function (err) {
+      reportPhotoError(err);
+      return [];
     });
   }
 
@@ -750,6 +803,109 @@
 
   // Health profile, daily targets and lab results
   var pendingLabs = null;
+  // Photos of lab report pages collected before asking Claude to read them all together.
+  var labPhotos = [];
+  var MAX_LAB_PHOTOS = 10;
+  var labsCardEl = null;
+
+  /** Redraws just the lab results card, so the page doesn't jump back to the top. */
+  function rerenderLabs() {
+    return Db.getAll('labs').then(function (labs) {
+      var old = labsCardEl;
+      var fresh = labsCard(labs);
+      if (old && old.parentNode) {
+        old.parentNode.replaceChild(fresh, old);
+      }
+    });
+  }
+
+  function addLabPhotos(photos) {
+    var room = MAX_LAB_PHOTOS - labPhotos.length;
+    if (photos.length > room) {
+      alert('Mỗi lần đọc tối đa ' + MAX_LAB_PHOTOS + ' ảnh. Chỉ lấy ' + room + ' ảnh đầu.');
+    }
+    labPhotos = labPhotos.concat(photos.slice(0, Math.max(0, room)));
+    rerenderLabs();
+  }
+
+  function labPhotoButtons() {
+    var full = labPhotos.length >= MAX_LAB_PHOTOS;
+    return h('div', { class: 'btn-row' },
+      h('button', {
+        class: 'btn',
+        type: 'button',
+        disabled: full,
+        onclick: function () {
+          pickPhoto('Ảnh phiếu xét nghiệm', 'CAMERA').then(function (photo) {
+            if (photo) {
+              addLabPhotos([photo]);
+            }
+          });
+        }
+      }, labPhotos.length ? '📷 Chụp thêm' : '📷 Chụp ảnh'),
+      h('button', {
+        class: 'btn',
+        type: 'button',
+        disabled: full,
+        onclick: function () {
+          pickGalleryPhotos().then(function (photos) {
+            if (photos.length) {
+              addLabPhotos(photos);
+            }
+          });
+        }
+      }, '🖼️ Chọn nhiều ảnh'));
+  }
+
+  function labPhotosSection() {
+    var box = h('div', null,
+      h('p', { class: 'muted small' }, labPhotos.length + ' ảnh đã chọn' + (labPhotos.length >= MAX_LAB_PHOTOS ? ' (tối đa)' : '') + '. Bấm ✕ để bỏ ảnh chụp lỗi.'),
+      h('div', { class: 'photo-grid' }, labPhotos.map(function (p, i) {
+        return h('div', { class: 'photo-tile' },
+          h('img', { src: p.thumb, alt: 'Ảnh ' + (i + 1) }),
+          h('button', {
+            type: 'button',
+            'aria-label': 'Bỏ ảnh ' + (i + 1),
+            onclick: function () {
+              labPhotos.splice(i, 1);
+              rerenderLabs();
+            }
+          }, '✕'));
+      })),
+      labPhotoButtons(),
+      h('button', {
+        class: 'btn primary',
+        type: 'button',
+        onclick: function () {
+          var images = labPhotos.map(function (p) {
+            return p.base64;
+          });
+          callAi('Claude đang đọc ' + images.length + ' ảnh phiếu xét nghiệm...', function (apiKey) {
+            return AI.readLabReport({ apiKey: apiKey, imagesBase64: images });
+          }).then(function (result) {
+            if (!result) {
+              return;
+            }
+            if (result.tests.length === 0) {
+              alert('Không đọc được kết quả nào. Hãy chụp rõ hơn, đủ sáng, thẳng phiếu.');
+              return;
+            }
+            labPhotos = [];
+            pendingLabs = result;
+            rerenderLabs();
+          });
+        }
+      }, '🔍 Đọc ' + labPhotos.length + ' ảnh'),
+      h('button', {
+        class: 'btn danger',
+        type: 'button',
+        onclick: function () {
+          labPhotos = [];
+          rerenderLabs();
+        }
+      }, 'Bỏ tất cả ảnh'));
+    return box;
+  }
 
   function renderProfile() {
     setScreen('Hồ sơ sức khỏe', 'profile', false);
@@ -884,13 +1040,16 @@
   function labsCard(labs) {
     var card = h('div', { class: 'card' }, h('h2', null, '🧪 Xét nghiệm máu & nước tiểu'));
 
+    labsCardEl = card;
+
     if (pendingLabs) {
-      card.appendChild(h('p', { class: 'muted small' }, 'Claude đọc được ' + pendingLabs.tests.length + ' kết quả' + (pendingLabs.test_date ? ' (ngày ' + pendingLabs.test_date + ')' : '') + '. Kiểm tra lại với phiếu rồi bỏ chọn dòng sai.'));
+      card.appendChild(h('p', { class: 'muted small' }, 'Claude đọc được ' + pendingLabs.tests.length + ' kết quả. Kiểm tra lại với phiếu rồi bỏ chọn dòng sai.'));
       var boxes = pendingLabs.tests.map(function (t) {
         var box = h('input', { type: 'checkbox' });
         box.checked = true;
         card.appendChild(h('label', { class: 'check-row' }, box,
-          h('span', null, h('strong', null, t.name), ': ' + t.value + ' ' + t.unit + (t.reference_range ? ' (tham chiếu ' + t.reference_range + ')' : ''))));
+          h('span', null, h('strong', null, t.name), ': ' + t.value + ' ' + t.unit + (t.reference_range ? ' (tham chiếu ' + t.reference_range + ')' : ''),
+            h('div', { class: 'muted small' }, t.date ? 'Ngày ' + t.date : 'Không rõ ngày — sẽ lưu là hôm nay'))));
         return box;
       });
       card.appendChild(h('div', { class: 'btn-row' },
@@ -898,11 +1057,10 @@
           class: 'btn primary',
           type: 'button',
           onclick: function () {
-            var date = pendingLabs.test_date || dayKey();
             var writes = pendingLabs.tests.filter(function (t, i) {
               return boxes[i].checked;
             }).map(function (t) {
-              return Db.put('labs', { type: t.type, name: t.name, value: t.value, unit: t.unit, reference_range: t.reference_range, date: date });
+              return Db.put('labs', { type: t.type, name: t.name, value: t.value, unit: t.unit, reference_range: t.reference_range, date: t.date || dayKey() });
             });
             Promise.all(writes).then(markLabsChanged).then(function () {
               pendingLabs = null;
@@ -915,9 +1073,14 @@
           type: 'button',
           onclick: function () {
             pendingLabs = null;
-            route();
+            rerenderLabs();
           }
         }, 'Bỏ')));
+      return card;
+    }
+
+    if (labPhotos.length) {
+      card.appendChild(labPhotosSection());
       return card;
     }
 
@@ -943,30 +1106,8 @@
         }, '✕')));
     });
 
-    card.appendChild(h('button', {
-      class: 'btn',
-      type: 'button',
-      onclick: function () {
-        pickPhoto('Ảnh phiếu xét nghiệm').then(function (photo) {
-          if (!photo) {
-            return;
-          }
-          callAi('Claude đang đọc phiếu xét nghiệm...', function (apiKey) {
-            return AI.readLabReport({ apiKey: apiKey, imageBase64: photo.base64 });
-          }).then(function (result) {
-            if (!result) {
-              return;
-            }
-            if (result.tests.length === 0) {
-              alert('Không đọc được kết quả nào. Hãy chụp rõ hơn, đủ sáng, thẳng phiếu.');
-              return;
-            }
-            pendingLabs = result;
-            route();
-          });
-        });
-      }
-    }, '📷 Chụp phiếu xét nghiệm (Claude đọc giúp)'));
+    card.appendChild(h('p', { class: 'muted small', style: 'margin-bottom:0' }, 'Chụp hoặc chọn ảnh phiếu xét nghiệm (nhiều trang, nhiều phiếu đều được) — Claude đọc giúp:'));
+    card.appendChild(labPhotoButtons());
 
     var addForm = h('form', { hidden: true, novalidate: true, style: 'margin-top:12px' },
       h('div', { class: 'grid-2' },
@@ -1062,7 +1203,7 @@
     });
   }
 
-  var APP_VERSION = '1.0';
+  var APP_VERSION = '1.1';
 
   function exportBackup() {
     Db.exportAll().then(function (data) {

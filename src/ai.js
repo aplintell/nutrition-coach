@@ -57,13 +57,13 @@ const PlanResult = z.object({
 });
 
 const LabsResult = z.object({
-  test_date: z.string().nullable(),
   tests: z.array(z.object({
     type: z.enum(['blood', 'urine', 'other']),
     name: z.string(),
     value: z.string(),
     unit: z.string(),
-    reference_range: z.string()
+    reference_range: z.string(),
+    date: z.string().nullable()
   }))
 });
 
@@ -237,19 +237,26 @@ export async function planRestOfDay({ apiKey, profile, labs, targets, meals, tot
   });
 }
 
-/** Reads a photo of a blood / urine test report into a list of results for the user to check. */
-export async function readLabReport({ apiKey, imageBase64 }) {
+/**
+ * Reads photos of blood / urine test reports (several pages, possibly several reports) into one
+ * list of results for the user to check.
+ */
+export async function readLabReport({ apiKey, imagesBase64 }) {
+  const count = imagesBase64.length;
   return ask(apiKey, {
     effort: 'medium',
     schema: LabsResult,
-    content: [imageBlock(imageBase64), {
+    content: imagesBase64.map(imageBlock).concat([{
       type: 'text',
       text: [
-        'This is a photo of a medical lab report (blood and/or urine tests), probably in Vietnamese.',
+        count === 1
+          ? 'This is a photo of a medical lab report (blood and/or urine tests), probably in Vietnamese.'
+          : `These ${count} photos are pages of one or more medical lab reports (blood and/or urine tests), probably in Vietnamese.`,
         'Copy every test result exactly as printed: the test name (keep the report\'s name, add the common Vietnamese/English name in brackets if it is an abbreviation), the value as printed, the unit, and the reference range as printed (empty string if none).',
-        'type: blood, urine, or other. test_date: the sampling/report date as YYYY-MM-DD, or null if not shown.',
+        'type: blood, urine, or other. date: the sampling/report date of the report that result is on, as YYYY-MM-DD, or null if not shown.',
+        'If the same result from the same report appears on more than one photo (overlapping shots), list it once.',
         'Do not invent values. If something is unreadable, leave it out.'
       ].join('\n')
-    }]
+    }])
   });
 }
