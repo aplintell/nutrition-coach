@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Dinh Dưỡng Của Tôi</string>
+    <string name="title_activity_main">Dinh Dưỡng Của Tôi</string>
+    <string name="package_name">com.codingmentor.nutritioncoach</string>
+    <string name="custom_url_scheme">com.codingmentor.nutritioncoach</string>
+</resources>

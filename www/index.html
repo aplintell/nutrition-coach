@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <title>Dinh Dưỡng Của Tôi</title>
+  <meta name="theme-color" content="#0f1513">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <button id="backBtn" class="icon-button" type="button" aria-label="Quay lại" hidden>&#8592;</button>
+    <h1 id="pageTitle">Dinh Dưỡng Của Tôi</h1>
+  </header>
+
+  <main id="view" class="container"></main>
+
+  <nav class="tabbar" aria-label="Màn hình chính">
+    <a href="#today" data-tab="today"><span aria-hidden="true">🍽️</span>Hôm nay</a>
+    <a href="#history" data-tab="history"><span aria-hidden="true">📅</span>Lịch sử</a>
+    <a href="#profile" data-tab="profile"><span aria-hidden="true">🩺</span>Hồ sơ</a>
+    <a href="#settings" data-tab="settings"><span aria-hidden="true">⚙️</span>Cài đặt</a>
+  </nav>
+
+  <div id="busy" class="busy-overlay" role="status" aria-live="polite" hidden>
+    <div class="spinner" aria-hidden="true"></div>
+    <p id="busyText">Đang xử lý...</p>
+  </div>
+
+  <input type="file" id="photoInput" accept="image/*" hidden>
+  <input type="file" id="backupInput" accept=".json,application/json" hidden>
+
+  <script src="js/ai.bundle.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
