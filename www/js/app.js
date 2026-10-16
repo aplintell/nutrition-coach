@@ -149,17 +149,35 @@
 
   // ---- Stored data ----
 
+  // The last settings read, so screens can tell synchronously which way Claude is asked.
+  var settingsCache = { apiKey: '', totalCostUsd: 0, requestCount: 0 };
+
   function loadSettings() {
     return Db.getKv('settings').then(function (s) {
-      return s || { apiKey: '', totalCostUsd: 0, requestCount: 0 };
+      settingsCache = s || { apiKey: '', totalCostUsd: 0, requestCount: 0 };
+      return settingsCache;
     });
+  }
+
+  function saveSettings(s) {
+    settingsCache = s;
+    return Db.setKv('settings', s);
+  }
+
+  /**
+   * How Claude is asked: 'app' shares the question to the Claude app (free with a Claude Pro
+   * plan) and the user pastes the reply back; 'api' calls the API with the user's key (paid).
+   */
+  function askMode(settings) {
+    settings = settings || settingsCache;
+    return settings.mode || (settings.apiKey ? 'api' : 'app');
   }
 
   function addCost(costUsd) {
     return loadSettings().then(function (s) {
       s.totalCostUsd = (s.totalCostUsd || 0) + costUsd;
       s.requestCount = (s.requestCount || 0) + 1;
-      return Db.setKv('settings', s);
+      return saveSettings(s);
     });
   }
 
@@ -183,27 +201,143 @@
     };
   }
 
-  /** Runs a Claude request with the busy overlay, records its cost, and reports errors. */
-  function callAi(busyText, fn) {
+  var API_FUNCTIONS = { meal: 'analyzeMeal', targets: 'computeTargets', plan: 'planRestOfDay', labs: 'readLabReport' };
+
+  /**
+   * Asks Claude for request `kind` ('meal' | 'targets' | 'plan' | 'labs'); buildArgs(profile, labs)
+   * gives the request's details. API mode resolves to the result. Claude app mode shares the
+   * question to the Claude app and resolves to null — the result comes later through pasteReply().
+   */
+  function askClaude(kind, busyText, buildArgs) {
     return loadSettings().then(function (settings) {
-      if (!settings.apiKey) {
-        alert('Chưa có API key. Vào Cài đặt để nhập API key của Anthropic.');
+      var mode = askMode(settings);
+      if (mode === 'api' && !settings.apiKey) {
+        alert('Chưa có API key. Vào Cài đặt để nhập API key, hoặc chọn hỏi qua ứng dụng Claude (miễn phí).');
         location.hash = '#settings';
         return null;
       }
-      showBusy(busyText);
       return Promise.all([Db.getKv('profile'), Db.getAll('labs')]).then(function (r) {
-        return fn(settings.apiKey, profileForAi(r[0]), r[1]);
-      }).then(function (answer) {
-        hideBusy();
-        addCost(answer.costUsd);
-        return answer.result;
-      }, function (err) {
+        var args = buildArgs(profileForAi(r[0]), r[1]);
+        if (mode === 'app') {
+          return shareToClaude(AI.manualRequest(kind, args)).then(function () {
+            return null;
+          });
+        }
+        showBusy(busyText);
+        args.apiKey = settings.apiKey;
+        return AI[API_FUNCTIONS[kind]](args).then(function (answer) {
+          hideBusy();
+          addCost(answer.costUsd);
+          return answer.result;
+        });
+      }).catch(function (err) {
         hideBusy();
         alert(err && err.message ? err.message : String(err));
         return null;
       });
     });
+  }
+
+  // ---- Asking through the Claude app ----
+
+  function isCancelError(err) {
+    return /cancel/i.test(err && err.message || '');
+  }
+
+  /**
+   * Opens the share sheet with the question and photos so the user can send them to the Claude
+   * app. The question is also copied, in case the chosen app only takes the photos.
+   */
+  function shareToClaude(request) {
+    window.__lastClaudeRequest = request; // lets the browser test see what was sent
+    var copied = writeClipboard(request.text);
+    if (isNative && plugins.Share && plugins.Filesystem) {
+      return copied.then(function () {
+        return Promise.all(request.images.map(function (base64, i) {
+          return plugins.Filesystem.writeFile({ path: 'gui-claude-' + (i + 1) + '.jpg', data: base64, directory: 'CACHE' })
+            .then(function (res) {
+              return res.uri;
+            });
+        }));
+      }).then(function (uris) {
+        var options = { title: 'Hỏi Claude', text: request.text, dialogTitle: 'Chọn ứng dụng Claude' };
+        if (uris.length) {
+          options.files = uris;
+        }
+        return plugins.Share.share(options);
+      }).catch(function (err) {
+        if (!isCancelError(err)) {
+          throw new Error('Không mở được chia sẻ: ' + (err && err.message ? err.message : err));
+        }
+      });
+    }
+    // Browser (testing): the question is on the clipboard; photos would be attached by hand.
+    return copied.then(function () {
+      alert('Đã sao chép câu hỏi. Mở Claude, dán câu hỏi' + (request.images.length ? ' và đính kèm ' + request.images.length + ' ảnh' : '') + ', rồi gửi.');
+    });
+  }
+
+  function writeClipboard(text) {
+    if (isNative && plugins.Clipboard) {
+      return plugins.Clipboard.write({ string: text }).catch(function () {});
+    }
+    return navigator.clipboard && navigator.clipboard.writeText
+      ? navigator.clipboard.writeText(text).catch(function () {})
+      : Promise.resolve();
+  }
+
+  /** Claude's reply from the clipboard; asks the user to paste it by hand if that isn't possible. */
+  function readReply() {
+    var read = isNative && plugins.Clipboard
+      ? plugins.Clipboard.read().then(function (r) {
+        return r && r.value;
+      })
+      : navigator.clipboard && navigator.clipboard.readText ? navigator.clipboard.readText() : Promise.resolve('');
+    return read.catch(function () {
+      return '';
+    }).then(function (text) {
+      if (text && text.indexOf('{') !== -1) {
+        return text;
+      }
+      return prompt('Chưa thấy câu trả lời của Claude trong bộ nhớ tạm. Hãy dán câu trả lời vào đây:', '') || '';
+    });
+  }
+
+  /** Reads the copied reply for request `kind` and hands the checked result to onResult. */
+  function pasteReply(kind, onResult) {
+    return readReply().then(function (text) {
+      if (!text.trim()) {
+        return;
+      }
+      var result;
+      try {
+        result = AI.parseManualReply(kind, text);
+      } catch (err) {
+        alert(err.message);
+        return;
+      }
+      return onResult(result);
+    });
+  }
+
+  /**
+   * The ask buttons for one kind of request. API mode: one button. Claude app mode: send to the
+   * Claude app, then paste its reply back, with a short how-to.
+   */
+  function askButtons(kind, label, onAsk, onResult, primary) {
+    if (askMode() === 'api') {
+      return h('button', { class: 'btn' + (primary ? ' primary' : ''), type: 'button', onclick: onAsk }, label);
+    }
+    return h('div', null,
+      h('button', { class: 'btn' + (primary ? ' primary' : ''), type: 'button', onclick: onAsk }, '📤 ' + label + ' — gửi cho ứng dụng Claude'),
+      h('button', {
+        class: 'btn',
+        type: 'button',
+        onclick: function () {
+          pasteReply(kind, onResult);
+        }
+      }, '📋 Dán câu trả lời của Claude'),
+      h('p', { class: 'muted small' }, 'Chọn ứng dụng Claude → bấm gửi → khi Claude trả lời xong, bấm nút sao chép (Copy) dưới câu trả lời → quay lại đây bấm "Dán câu trả lời". Nếu câu hỏi không hiện trong Claude, giữ ô nhập và chọn Dán.'));
   }
 
   // ---- Photos ----
@@ -534,41 +668,36 @@
     } else {
       card.appendChild(h('p', { class: 'muted' }, 'Claude xem những gì bạn đã ăn hôm nay, cho biết chất nào còn thiếu hoặc đã quá nhiều, và gợi ý nên ăn gì cho phần còn lại của ngày.'));
     }
-    card.appendChild(h('button', {
-      class: 'btn' + (!plan || stale ? ' primary' : ''),
-      type: 'button',
-      onclick: function () {
-        if (!targets) {
-          alert('Hãy tính mục tiêu mỗi ngày trong Hồ sơ trước.');
-          location.hash = '#profile';
-          return;
-        }
-        callAi('Claude đang lên kế hoạch cho phần còn lại của ngày...', function (apiKey, profile, labs) {
-          return AI.planRestOfDay({
-            apiKey: apiKey,
-            profile: profile,
-            labs: labs,
-            targets: targets.targets,
-            meals: meals.map(function (m) {
-              return {
-                time: m.time,
-                name: m.name,
-                items: m.items.map(function (i) {
-                  return i.name + ' (' + i.portion + ')';
-                }).join(', ') + (m.portion !== 1 ? ' — ăn ' + Math.round(m.portion * 100) + '% phần' : '')
-              };
-            }),
-            totals: roundAll(totals),
-            now: dayTitle(key) + ' ' + timeLabel()
-          });
-        }).then(function (result) {
-          if (!result) {
-            return;
-          }
-          return Db.put('plans', { day: key, time: timeLabel(), mealCount: meals.length, result: result }).then(route);
-        });
+    function savePlan(result) {
+      return Db.put('plans', { day: key, time: timeLabel(), mealCount: meals.length, result: result }).then(route);
+    }
+    card.appendChild(askButtons('plan', plan ? 'Cập nhật gợi ý' : 'Phân tích & gợi ý', function () {
+      if (!targets) {
+        alert('Hãy tính mục tiêu mỗi ngày trong Hồ sơ trước.');
+        location.hash = '#profile';
+        return;
       }
-    }, plan ? 'Cập nhật gợi ý' : 'Phân tích & gợi ý'));
+      askClaude('plan', 'Claude đang lên kế hoạch cho phần còn lại của ngày...', function (profile, labs) {
+        return {
+          profile: profile,
+          labs: labs,
+          targets: targets.targets,
+          meals: meals.map(function (m) {
+            return {
+              time: m.time,
+              name: m.name,
+              items: m.items.map(function (i) {
+                return i.name + ' (' + i.portion + ')';
+              }).join(', ') + (m.portion !== 1 ? ' — ăn ' + Math.round(m.portion * 100) + '% phần' : '')
+            };
+          }),
+          totals: roundAll(totals),
+          now: dayTitle(key) + ' ' + timeLabel()
+        };
+      }).then(function (result) {
+        return result ? savePlan(result) : null;
+      });
+    }, savePlan, !plan || stale));
     return card;
   }
 
@@ -590,6 +719,7 @@
           if (photo) {
             p.photo = photo;
             p.result = null;
+            storePendingMeal();
             renderAdd();
           }
         });
@@ -608,12 +738,10 @@
     viewEl.appendChild(h('label', { class: 'field', style: 'margin-top:12px' }, 'Ghi chú (không bắt buộc — món gì, bao nhiêu, cách nấu)', noteInput));
 
     if (!p.result) {
-      viewEl.appendChild(h('button', {
-        class: 'btn primary',
-        type: 'button',
-        onclick: analyze
-      }, '🔍 Phân tích bữa ăn'));
-      viewEl.appendChild(h('p', { class: 'muted small' }, 'Claude ước tính món, khối lượng và chất dinh dưỡng. Mất khoảng 10–60 giây.'));
+      viewEl.appendChild(askButtons('meal', '🔍 Phân tích bữa ăn', analyze, showMealResult, true));
+      if (askMode() === 'api') {
+        viewEl.appendChild(h('p', { class: 'muted small' }, 'Claude ước tính món, khối lượng và chất dinh dưỡng. Mất khoảng 10–60 giây.'));
+      }
       return;
     }
 
@@ -655,6 +783,7 @@
             class: p.portion === c[0] ? 'selected' : '',
             onclick: function () {
               p.portion = c[0];
+              storePendingMeal();
               renderAdd();
             }
           }, c[1]);
@@ -673,12 +802,23 @@
 
       viewEl.appendChild(h('button', { class: 'btn primary', type: 'button', onclick: saveMeal }, '✅ Lưu — tôi sẽ ăn bữa này'));
       viewEl.appendChild(h('div', { class: 'btn-row' },
-        h('button', { class: 'btn', type: 'button', onclick: analyze }, 'Phân tích lại'),
+        h('button', {
+          class: 'btn',
+          type: 'button',
+          onclick: function () {
+            p.result = null;
+            storePendingMeal();
+            renderAdd();
+            if (askMode() === 'api') {
+              analyze();
+            }
+          }
+        }, 'Phân tích lại'),
         h('button', {
           class: 'btn danger',
           type: 'button',
           onclick: function () {
-            pending = null;
+            clearPendingMeal();
             location.hash = '#today';
           }
         }, 'Bỏ')));
@@ -704,11 +844,34 @@
         // The full photo is kept for PHOTO_KEEP_DAYS; the thumbnail above stays for good.
         return p.photo ? Db.put('photos', { mealId: mealId, day: dayKey(now), dataUrl: p.photo.preview }) : null;
       }).then(function () {
-        pending = null;
+        clearPendingMeal();
         location.hash = '#today';
       }, function (err) {
         alert('Không lưu được: ' + err.message);
       });
+    }
+  }
+
+  // The meal being added is also kept on the phone, so it survives Android closing the app while
+  // the user is in the Claude app.
+  function storePendingMeal() {
+    return Db.setKv('pendingMeal', pending).catch(function () {});
+  }
+
+  function clearPendingMeal() {
+    pending = null;
+    return Db.setKv('pendingMeal', null).catch(function () {});
+  }
+
+  function showMealResult(result) {
+    if (!pending) {
+      return;
+    }
+    pending.result = result;
+    pending.portion = 1;
+    storePendingMeal();
+    if (location.hash === '#add') {
+      renderAdd();
     }
   }
 
@@ -718,25 +881,21 @@
       alert('Hãy chụp ảnh bữa ăn hoặc ghi chú món ăn.');
       return;
     }
+    storePendingMeal();
     Db.getAllByIndex('meals', 'day', dayKey()).then(function (meals) {
-      return callAi('Claude đang xem bữa ăn...', function (apiKey, profile, labs) {
-        return AI.analyzeMeal({
-          apiKey: apiKey,
+      return askClaude('meal', 'Claude đang xem bữa ăn...', function (profile, labs) {
+        return {
           imageBase64: p.photo ? p.photo.base64 : null,
           note: p.note.trim(),
           profile: profile,
           labs: labs,
           eatenToday: roundAll(sumNutrients(meals)),
           now: dayTitle(dayKey()) + ' ' + timeLabel()
-        });
+        };
       });
     }).then(function (result) {
       if (result) {
-        p.result = result;
-        p.portion = 1;
-        if (location.hash === '#add') {
-          renderAdd();
-        }
+        showMealResult(result);
       }
     });
   }
@@ -869,6 +1028,16 @@
       }, '🖼️ Chọn nhiều ảnh'));
   }
 
+  function showLabResults(result) {
+    if (result.tests.length === 0) {
+      alert('Không đọc được kết quả nào. Hãy chụp rõ hơn, đủ sáng, thẳng phiếu.');
+      return;
+    }
+    labPhotos = [];
+    pendingLabs = result;
+    rerenderLabs();
+  }
+
   function labPhotosSection() {
     var box = h('div', null,
       h('p', { class: 'muted small' }, labPhotos.length + ' ảnh đã chọn' + (labPhotos.length >= MAX_LAB_PHOTOS ? ' (tối đa)' : '') + '. Bấm ✕ để bỏ ảnh chụp lỗi.'),
@@ -885,29 +1054,18 @@
           }, '✕'));
       })),
       labPhotoButtons(),
-      h('button', {
-        class: 'btn primary',
-        type: 'button',
-        onclick: function () {
-          var images = labPhotos.map(function (p) {
-            return p.base64;
-          });
-          callAi('Claude đang đọc ' + images.length + ' ảnh phiếu xét nghiệm...', function (apiKey) {
-            return AI.readLabReport({ apiKey: apiKey, imagesBase64: images });
-          }).then(function (result) {
-            if (!result) {
-              return;
-            }
-            if (result.tests.length === 0) {
-              alert('Không đọc được kết quả nào. Hãy chụp rõ hơn, đủ sáng, thẳng phiếu.');
-              return;
-            }
-            labPhotos = [];
-            pendingLabs = result;
-            rerenderLabs();
-          });
-        }
-      }, '🔍 Đọc ' + labPhotos.length + ' ảnh'),
+      askButtons('labs', '🔍 Đọc ' + labPhotos.length + ' ảnh', function () {
+        var images = labPhotos.map(function (p) {
+          return p.base64;
+        });
+        askClaude('labs', 'Claude đang đọc ' + images.length + ' ảnh phiếu xét nghiệm...', function () {
+          return { imagesBase64: images };
+        }).then(function (result) {
+          if (result) {
+            showLabResults(result);
+          }
+        });
+      }, showLabResults, true),
       h('button', {
         class: 'btn danger',
         type: 'button',
@@ -1019,29 +1177,25 @@
       card.appendChild(toggle);
       card.appendChild(table);
     }
-    card.appendChild(h('button', {
-      class: 'btn' + (!targets || targetsStale(targets, profile, labsUpdatedAt) ? ' primary' : ''),
-      type: 'button',
-      onclick: function () {
-        if (!profile) {
-          alert('Hãy lưu hồ sơ trước.');
-          return;
-        }
-        callAi('Claude đang tính mục tiêu dinh dưỡng của bạn...', function (apiKey, p, labList) {
-          return AI.computeTargets({ apiKey: apiKey, profile: p, labs: labList, today: dayKey() });
-        }).then(function (result) {
-          if (!result) {
-            return;
-          }
-          return Db.setKv('targets', {
-            computedAt: new Date().toISOString(),
-            targets: result.targets,
-            explanation: result.explanation,
-            labFlags: result.lab_flags
-          }).then(route);
-        });
+    function saveTargets(result) {
+      return Db.setKv('targets', {
+        computedAt: new Date().toISOString(),
+        targets: result.targets,
+        explanation: result.explanation,
+        labFlags: result.lab_flags
+      }).then(route);
+    }
+    card.appendChild(askButtons('targets', targets ? 'Tính lại mục tiêu' : 'Tính mục tiêu mỗi ngày', function () {
+      if (!profile) {
+        alert('Hãy lưu hồ sơ trước.');
+        return;
       }
-    }, targets ? 'Tính lại mục tiêu' : 'Tính mục tiêu mỗi ngày'));
+      askClaude('targets', 'Claude đang tính mục tiêu dinh dưỡng của bạn...', function (p, labList) {
+        return { profile: p, labs: labList, today: dayKey() };
+      }).then(function (result) {
+        return result ? saveTargets(result) : null;
+      });
+    }, saveTargets, !targets || targetsStale(targets, profile, labsUpdatedAt)));
     return card;
   }
 
@@ -1120,6 +1274,15 @@
 
     card.appendChild(h('p', { class: 'muted small', style: 'margin-bottom:0' }, 'Chụp hoặc chọn ảnh phiếu xét nghiệm (nhiều trang, nhiều phiếu đều được) — Claude đọc giúp:'));
     card.appendChild(labPhotoButtons());
+    if (askMode() === 'app') {
+      card.appendChild(h('button', {
+        class: 'link-btn',
+        type: 'button',
+        onclick: function () {
+          pasteReply('labs', showLabResults);
+        }
+      }, '📋 Đã gửi ảnh cho Claude? Dán câu trả lời ở đây'));
+    }
 
     var addForm = h('form', { hidden: true, novalidate: true, style: 'margin-top:12px' },
       h('div', { class: 'grid-2' },
@@ -1165,9 +1328,26 @@
   function renderSettings() {
     setScreen('Cài đặt', 'settings', false);
     return loadSettings().then(function (s) {
+      var mode = askMode(s);
+      function modeChoice(value, title, detail) {
+        var radio = h('input', { type: 'radio', name: 'askMode', value: value });
+        radio.checked = mode === value;
+        radio.addEventListener('change', function () {
+          s.mode = value;
+          saveSettings(s).then(route);
+        });
+        return h('label', { class: 'check-row' }, radio, h('span', null, h('strong', null, title), h('div', { class: 'muted small' }, detail)));
+      }
+      viewEl.appendChild(h('div', { class: 'card' },
+        h('h2', null, '🤖 Cách hỏi Claude'),
+        modeChoice('app', 'Qua ứng dụng Claude (miễn phí với gói Pro)',
+          'App gửi câu hỏi và ảnh sang ứng dụng Claude trên điện thoại; bạn bấm gửi, sao chép câu trả lời rồi dán lại vào đây. Tính vào giới hạn sử dụng của gói Pro.'),
+        modeChoice('api', 'API key (trả phí theo lần dùng)',
+          'Một chạm, kết quả hiện ngay trong app. Cần API key và tiền nạp ở console.anthropic.com (khoảng vài cent mỗi bữa).')));
+
       var keyInput = h('input', { type: 'password', autocomplete: 'off', placeholder: 'sk-ant-...' });
       keyInput.value = s.apiKey || '';
-      viewEl.appendChild(h('div', { class: 'card' },
+      viewEl.appendChild(h('div', { class: 'card', hidden: mode !== 'api' },
         h('h2', null, '🔑 Claude API key'),
         h('p', { class: 'muted small' }, 'Tạo key tại console.anthropic.com → API Keys, rồi dán vào đây. Key chỉ lưu trên điện thoại này.'),
         h('label', { class: 'field' }, 'API key', keyInput),
@@ -1183,13 +1363,13 @@
           type: 'button',
           onclick: function () {
             s.apiKey = keyInput.value.trim();
-            Db.setKv('settings', s).then(function () {
+            saveSettings(s).then(function () {
               alert(s.apiKey ? 'Đã lưu API key.' : 'Đã xóa API key.');
             });
           }
         }, 'Lưu key')));
 
-      viewEl.appendChild(h('div', { class: 'card' },
+      viewEl.appendChild(h('div', { class: 'card', hidden: mode !== 'api' },
         h('h2', null, '💵 Chi phí đã dùng'),
         h('p', null, 'Khoảng $' + (s.totalCostUsd || 0).toFixed(2) + ' cho ' + (s.requestCount || 0) + ' lần hỏi Claude.'),
         h('p', { class: 'muted small' }, 'Ước tính theo giá Claude Opus 5.5; số chính xác xem ở console.anthropic.com. Mỗi bữa ăn thường tốn vài cent.')));
@@ -1217,7 +1397,7 @@
     });
   }
 
-  var APP_VERSION = '1.2';
+  var APP_VERSION = '1.3';
 
   function exportBackup() {
     Db.exportAll().then(function (data) {
@@ -1281,7 +1461,9 @@
     var screen = parts[0];
     var done;
     if (screen === 'add') {
-      done = Promise.resolve(renderAdd());
+      done = (pending ? Promise.resolve() : Db.getKv('pendingMeal').then(function (stored) {
+        pending = stored || null;
+      })).then(renderAdd);
     } else if (screen === 'meal') {
       done = renderMeal(parseInt(parts[1], 10));
     } else if (screen === 'day') {
@@ -1332,5 +1514,5 @@
   keepFrom.setDate(keepFrom.getDate() - (PHOTO_KEEP_DAYS - 1));
   Db.prunePhotosBefore(dayKey(keepFrom)).catch(function () {});
 
-  route();
+  loadSettings().then(route, route);
 })();
