@@ -7,8 +7,8 @@
 // - Claude app mode (free with a Claude Pro plan): manualRequest() turns it into a question,
 //   with photos, that the user shares to the official Claude app; the reply, copied back, is
 //   checked by parseManualReply() against the same schema.
-// - Gemini mode (free with a Google AI Studio key): askGemini() sends the same question to Gemini
-//   and checks its JSON reply the same way.
+// - Free modes (Gemini or Groq, with the user's own free key): askFree() sends the same question
+//   to that service and checks its JSON reply the same way.
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { z } from 'zod';
@@ -438,72 +438,105 @@ export function parseManualReply(kind, reply) {
   return checked.data;
 }
 
-// ---- Gemini mode ----
+// ---- Free AI services: Gemini and Groq ----
+//
+// Both get the same question as the Claude app and their JSON replies go through the same
+// checks (parseManualReply), so results have the same shape as in the other modes.
 
-// Free with a Google AI Studio key (daily limits). "gemini-flash-latest" follows Google's newest
-// Flash model; the fixed name is a fallback in case the alias is unavailable.
-const GEMINI_MODELS = ['gemini-flash-latest', 'gemini-2.5-flash'];
+const FREE_NAMES = { gemini: 'Gemini', groq: 'Groq' };
 
-function geminiError(status, message) {
+function freeError(service, status, message) {
+  const name = FREE_NAMES[service];
   if (status === 400 && /api key/i.test(message) || status === 401 || status === 403) {
-    return new AiError('Gemini API key không đúng hoặc chưa được bật. Kiểm tra lại trong Cài đặt.');
+    return new AiError(`${name} API key không đúng hoặc chưa được bật. Kiểm tra lại trong Cài đặt.`);
   }
   if (status === 429) {
-    return new AiError('Đã hết lượt miễn phí của Gemini (giới hạn mỗi phút/mỗi ngày). Đợi một lát hoặc mai thử lại.');
+    return new AiError(`Đã hết lượt miễn phí của ${name} (giới hạn mỗi phút/mỗi ngày). Đợi một lát hoặc mai thử lại.`);
+  }
+  if (status === 413) {
+    return new AiError(`Yêu cầu quá lớn với gói miễn phí của ${name}. Thử với ít ảnh hơn.`);
   }
   if (status >= 500) {
-    return new AiError('Gemini đang bận hoặc gặp lỗi (' + status + '). Thử lại sau ít phút.');
+    return new AiError(`${name} đang bận hoặc gặp lỗi (${status}). Thử lại sau ít phút.`);
   }
-  return new AiError('Gemini từ chối yêu cầu: ' + (message || 'lỗi ' + status));
+  return new AiError(`${name} từ chối yêu cầu: ` + (message || 'lỗi ' + status));
 }
 
-async function callGemini(apiKey, model, body) {
+async function callJson(service, url, headers, body) {
   let response;
   try {
-    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify(body)
+    response = await fetch(url, {
+      method: body ? 'POST' : 'GET',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
+      body: body ? JSON.stringify(body) : undefined
     });
   } catch (err) {
-    throw new AiError('Không kết nối được tới Gemini. Kiểm tra mạng rồi thử lại.');
+    throw new AiError(`Không kết nối được tới ${FREE_NAMES[service]}. Kiểm tra mạng rồi thử lại.`);
   }
   const data = await response.json().catch(() => ({}));
-  return { status: response.status, data };
+  return { status: response.status, data, message: data.error && data.error.message || '' };
 }
 
-/**
- * Asks Gemini for request kind ('meal' | 'targets' | 'plan' | 'labs') with the user's free Google
- * key. Gemini gets the same question as the Claude app and its JSON reply goes through the same
- * checks, so the result is the same shape as in the other modes.
- */
-export async function askGemini(kind, args) {
-  if (!args.apiKey) {
-    throw new AiError('Chưa có Gemini API key. Vào Cài đặt để nhập key (miễn phí tại aistudio.google.com).');
+function questionText(request) {
+  return request.text + '\n\nReply with only the JSON object. ' + replyShape(request);
+}
+
+function parseFreeReply(service, kind, text) {
+  try {
+    return parseManualReply(kind, text.replace(/<think>[\s\S]*?<\/think>/g, ''));
+  } catch (err) {
+    throw new AiError(`Câu trả lời của ${FREE_NAMES[service]} bị lỗi định dạng. Thử lại.`);
   }
-  const request = BUILDERS[kind](args);
-  const body = {
-    system_instruction: { parts: [{ text: SYSTEM }] },
-    contents: [{
-      role: 'user',
-      parts: request.images.map((data) => ({ inline_data: { mime_type: 'image/jpeg', data } }))
-        .concat([{ text: request.text + '\n\nReply with only the JSON object. ' + replyShape(request) }])
-    }],
-    generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 16000 }
-  };
+}
+
+// -- Gemini (free with a Google AI Studio key) --
+
+// The "-latest" aliases follow Google's newest models; fixed names are fallbacks. Flash-Lite with
+// minimal thinking answers several times faster; Flash thinks longer and reads photos more carefully.
+const GEMINI_MODELS = {
+  fast: ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-2.5-flash-lite'],
+  careful: ['gemini-flash-latest', 'gemini-2.5-flash']
+};
+// Ways to ask for little thinking, newest first; older models reject the newer setting.
+const GEMINI_LOW_THINKING = [{ thinkingLevel: 'minimal' }, { thinkingLevel: 'low' }, { thinkingBudget: 0 }, null];
+
+// "model|setting" pairs a service has rejected, so later requests skip straight to one that works.
+const rejectedSettings = new Set();
+
+function accepted(model, settings) {
+  return settings.filter((s) => !rejectedSettings.has(model + '|' + JSON.stringify(s)));
+}
+
+async function geminiGenerate(apiKey, speed, contents, systemText) {
+  const fast = speed !== 'careful';
   let answer;
-  for (const model of GEMINI_MODELS) {
-    answer = await callGemini(args.apiKey, model, body);
+  for (const model of GEMINI_MODELS[fast ? 'fast' : 'careful']) {
+    for (const thinking of accepted(model, fast ? GEMINI_LOW_THINKING : [null])) {
+      const generationConfig = { responseMimeType: 'application/json', maxOutputTokens: 16000 };
+      if (thinking) {
+        generationConfig.thinkingConfig = thinking;
+      }
+      const body = { contents, generationConfig };
+      if (systemText) {
+        body.system_instruction = { parts: [{ text: systemText }] };
+      }
+      answer = await callJson('gemini', `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        { 'x-goog-api-key': apiKey }, body);
+      answer.model = model;
+      if (!(answer.status === 400 && /think/i.test(answer.message))) {
+        break;
+      }
+      rejectedSettings.add(model + '|' + JSON.stringify(thinking));
+    }
     if (answer.status !== 404) {
       break;
     }
   }
-  const { status, data } = answer;
-  if (status !== 200) {
-    throw geminiError(status, data.error && data.error.message);
+  if (answer.status !== 200) {
+    throw freeError('gemini', answer.status, answer.message);
   }
-  const candidate = (data.candidates || [])[0];
-  if (!candidate || data.promptFeedback && data.promptFeedback.blockReason) {
+  const candidate = (answer.data.candidates || [])[0];
+  if (!candidate || answer.data.promptFeedback && answer.data.promptFeedback.blockReason) {
     throw new AiError('Gemini không trả lời yêu cầu này. Thử chụp lại hoặc ghi chú rõ hơn.');
   }
   if (candidate.finishReason === 'MAX_TOKENS') {
@@ -513,9 +546,127 @@ export async function askGemini(kind, args) {
     .filter((p) => p.text && !p.thought)
     .map((p) => p.text)
     .join('');
-  try {
-    return { result: parseManualReply(kind, text), costUsd: 0 };
-  } catch (err) {
-    throw new AiError('Câu trả lời của Gemini bị lỗi định dạng. Thử lại.');
+  return { text, model: answer.model };
+}
+
+async function askGemini(kind, args) {
+  const request = BUILDERS[kind](args);
+  const contents = [{
+    role: 'user',
+    parts: request.images.map((data) => ({ inline_data: { mime_type: 'image/jpeg', data } }))
+      .concat([{ text: questionText(request) }])
+  }];
+  const { text } = await geminiGenerate(args.apiKey, args.speed, contents, SYSTEM);
+  return parseFreeReply('gemini', kind, text);
+}
+
+// -- Groq (free with a GroqCloud key; very fast, at most 5 photos per request) --
+
+const GROQ_URL = 'https://api.groq.com/openai/v1';
+const GROQ_MAX_IMAGES = 5;
+// Groq's line-up changes often, so the model is picked from what the key can use: preferred
+// vision models first, then anything whose name suggests it reads images.
+const GROQ_VISION_MODELS = [
+  'qwen/qwen3.8-27b', 'qwen/qwen3.6-27b', 'meta-llama/llama-4-maverick-17b-128e-instruct', 'meta-llama/llama-4-scout-17b-16e-instruct'
+];
+const GROQ_VISION_HINT = /vision|-vl\b|-vl-|llama-4|qwen3\.\d+-\d+b/i;
+const groqModelByKey = {};
+
+async function groqModel(apiKey) {
+  if (groqModelByKey[apiKey]) {
+    return groqModelByKey[apiKey];
   }
+  const answer = await callJson('groq', GROQ_URL + '/models', { Authorization: 'Bearer ' + apiKey });
+  if (answer.status !== 200) {
+    throw freeError('groq', answer.status, answer.message);
+  }
+  const ids = (answer.data.data || []).filter((m) => m.active !== false).map((m) => m.id);
+  const model = GROQ_VISION_MODELS.find((id) => ids.includes(id)) || ids.find((id) => GROQ_VISION_HINT.test(id));
+  if (!model) {
+    throw new AiError('Groq hiện không có model đọc được ảnh cho key này. Hãy dùng Gemini.');
+  }
+  groqModelByKey[apiKey] = model;
+  return model;
+}
+
+async function groqChat(apiKey, messages) {
+  const model = await groqModel(apiKey);
+  // Little or no "thinking" keeps answers fast; models that don't think reject the setting.
+  let answer;
+  for (const effort of accepted(model, ['none', 'low', null])) {
+    const body = { model, messages, response_format: { type: 'json_object' }, temperature: 0.3, max_completion_tokens: 8000 };
+    if (effort) {
+      body.reasoning_effort = effort;
+    }
+    answer = await callJson('groq', GROQ_URL + '/chat/completions', { Authorization: 'Bearer ' + apiKey }, body);
+    if (!(answer.status === 400 && /reasoning/i.test(answer.message))) {
+      break;
+    }
+    rejectedSettings.add(model + '|' + JSON.stringify(effort));
+  }
+  if (answer.status !== 200) {
+    throw freeError('groq', answer.status, answer.message);
+  }
+  const choice = (answer.data.choices || [])[0];
+  if (!choice || !choice.message || !choice.message.content) {
+    throw new AiError('Groq không trả lời yêu cầu này. Thử lại.');
+  }
+  return { text: choice.message.content, model };
+}
+
+function groqMessages(request) {
+  return [
+    { role: 'system', content: SYSTEM },
+    {
+      role: 'user',
+      content: request.images.map((data) => ({ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + data } }))
+        .concat([{ type: 'text', text: questionText(request) }])
+    }
+  ];
+}
+
+async function askGroq(kind, args) {
+  if (kind === 'labs' && args.imagesBase64.length > GROQ_MAX_IMAGES) {
+    // Read the photos 5 at a time and put the results together.
+    const tests = [];
+    const seen = new Set();
+    for (let i = 0; i < args.imagesBase64.length; i += GROQ_MAX_IMAGES) {
+      const part = await askGroq(kind, Object.assign({}, args, { imagesBase64: args.imagesBase64.slice(i, i + GROQ_MAX_IMAGES) }));
+      part.tests.forEach((t) => {
+        const key = [t.type, t.name.toLowerCase(), t.date].join('|');
+        if (!seen.has(key)) {
+          seen.add(key);
+          tests.push(t);
+        }
+      });
+    }
+    return { tests };
+  }
+  const { text } = await groqChat(args.apiKey, groqMessages(BUILDERS[kind](args)));
+  return parseFreeReply('groq', kind, text);
+}
+
+/**
+ * Asks a free AI service ('gemini' | 'groq') for request kind ('meal' | 'targets' | 'plan' |
+ * 'labs') with the user's own key; resolves to { result, costUsd: 0 }.
+ */
+export async function askFree(service, kind, args) {
+  if (!args.apiKey) {
+    throw new AiError(`Chưa có ${FREE_NAMES[service]} API key. Vào Cài đặt để nhập key.`);
+  }
+  const result = await (service === 'groq' ? askGroq(kind, args) : askGemini(kind, args));
+  return { result, costUsd: 0 };
+}
+
+/** A tiny request to check a key; resolves to the model that answered and how long it took. */
+export async function testFreeKey(service, apiKey, speed) {
+  if (!apiKey) {
+    throw new AiError('Hãy dán API key trước.');
+  }
+  const started = Date.now();
+  const question = 'Reply with this JSON object only: {"ok": true}';
+  const { model } = service === 'groq'
+    ? await groqChat(apiKey, [{ role: 'user', content: question }])
+    : await geminiGenerate(apiKey, speed, [{ role: 'user', parts: [{ text: question }] }]);
+  return { model, seconds: Math.round((Date.now() - started) / 100) / 10 };
 }

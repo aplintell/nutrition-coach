@@ -167,16 +167,19 @@
   /**
    * How the AI is asked: 'app' shares the question to the Claude app (free with a Claude Pro
    * plan) and the user pastes the reply back; 'api' calls the Claude API with the user's key
-   * (paid); 'gemini' calls Google Gemini with the user's free key.
+   * (paid); 'gemini' and 'groq' call that free service with the user's own free key.
    */
   function askMode(settings) {
     settings = settings || settingsCache;
     return settings.mode || (settings.apiKey ? 'api' : 'app');
   }
 
+  // The free services: settings key field and the name shown while waiting.
+  var FREE_SERVICES = { gemini: { key: 'geminiKey', name: 'Gemini' }, groq: { key: 'groqKey', name: 'Groq' } };
+
   /** True for the modes where the answer comes back straight into the app (one tap). */
   function isDirect(mode) {
-    return mode === 'api' || mode === 'gemini';
+    return mode === 'api' || !!FREE_SERVICES[mode];
   }
 
   function addCost(costUsd) {
@@ -217,7 +220,8 @@
   function askClaude(kind, busyText, buildArgs) {
     return loadSettings().then(function (settings) {
       var mode = askMode(settings);
-      if (mode === 'api' && !settings.apiKey || mode === 'gemini' && !settings.geminiKey) {
+      var free = FREE_SERVICES[mode];
+      if (mode === 'api' && !settings.apiKey || free && !settings[free.key]) {
         alert('Chưa có API key. Vào Cài đặt để nhập API key, hoặc chọn hỏi qua ứng dụng Claude (miễn phí).');
         location.hash = '#settings';
         return null;
@@ -229,10 +233,11 @@
             return null;
           });
         }
-        if (mode === 'gemini') {
-          showBusy(busyText.replace('Claude', 'Gemini'));
-          args.apiKey = settings.geminiKey;
-          return AI.askGemini(kind, args).then(function (answer) {
+        if (free) {
+          showBusy(busyText.replace('Claude', free.name));
+          args.apiKey = settings[free.key];
+          args.speed = settings.geminiSpeed;
+          return AI.askFree(mode, kind, args).then(function (answer) {
             hideBusy();
             return answer.result;
           });
@@ -1595,33 +1600,79 @@
           'App gửi câu hỏi và ảnh sang ứng dụng Claude trên điện thoại; bạn bấm gửi, sao chép câu trả lời rồi dán lại vào đây. Tính vào giới hạn sử dụng của gói Pro.'),
         modeChoice('gemini', 'Google Gemini (miễn phí)',
           'Một chạm, kết quả hiện ngay trong app. Cần Gemini API key miễn phí từ aistudio.google.com (có giới hạn số lần mỗi ngày).'),
+        modeChoice('groq', 'Groq (miễn phí, rất nhanh)',
+          'Một chạm, trả lời thường chỉ vài giây. Cần Groq API key miễn phí từ console.groq.com. Đọc ảnh món ăn có thể kém chính xác hơn Gemini.'),
         modeChoice('api', 'Claude API key (trả phí theo lần dùng)',
           'Một chạm, kết quả hiện ngay trong app. Cần API key và tiền nạp ở console.anthropic.com (khoảng vài cent mỗi bữa).')));
 
-      var geminiInput = h('input', { type: 'password', autocomplete: 'off', placeholder: 'AIza...' });
-      geminiInput.value = s.geminiKey || '';
-      viewEl.appendChild(h('div', { class: 'card', hidden: mode !== 'gemini' },
-        h('h2', null, '🔑 Gemini API key'),
-        h('p', { class: 'muted small' }, 'Vào aistudio.google.com/apikey → đăng nhập Google → "Create API key" → sao chép rồi dán vào đây. Miễn phí, không cần thẻ. Key chỉ lưu trên điện thoại này.'),
-        h('p', { class: 'muted small' }, 'Lưu ý: với gói miễn phí, Google có thể dùng dữ liệu gửi lên (ảnh, hồ sơ, xét nghiệm) để cải thiện sản phẩm của họ.'),
-        h('label', { class: 'field' }, 'API key', geminiInput),
-        h('button', {
-          class: 'link-btn',
-          type: 'button',
-          onclick: function () {
-            geminiInput.type = geminiInput.type === 'password' ? 'text' : 'password';
-          }
-        }, 'Hiện / ẩn key'),
-        h('button', {
-          class: 'btn primary',
-          type: 'button',
-          onclick: function () {
-            s.geminiKey = geminiInput.value.trim();
-            saveSettings(s).then(function () {
-              alert(s.geminiKey ? 'Đã lưu Gemini API key.' : 'Đã xóa Gemini API key.');
-            });
-          }
-        }, 'Lưu key')));
+      /** Key box for a free service, with a button that checks the key and shows how fast it answers. */
+      function freeKeyCard(service, placeholder, help, extra) {
+        var field = FREE_SERVICES[service].key;
+        var name = FREE_SERVICES[service].name;
+        var input = h('input', { type: 'password', autocomplete: 'off', placeholder: placeholder });
+        input.value = s[field] || '';
+        var testResult = h('p', { class: 'muted small' }, '');
+        return h('div', { class: 'card', hidden: mode !== service },
+          h('h2', null, '🔑 ' + name + ' API key'),
+          help.map(function (text) {
+            return h('p', { class: 'muted small' }, text);
+          }),
+          extra,
+          h('label', { class: 'field' }, 'API key', input),
+          h('button', {
+            class: 'link-btn',
+            type: 'button',
+            onclick: function () {
+              input.type = input.type === 'password' ? 'text' : 'password';
+            }
+          }, 'Hiện / ẩn key'),
+          h('div', { class: 'btn-row' },
+            h('button', {
+              class: 'btn',
+              type: 'button',
+              onclick: function () {
+                testResult.textContent = 'Đang thử...';
+                AI.testFreeKey(service, input.value.trim(), s.geminiSpeed).then(function (r) {
+                  testResult.textContent = '✅ Key dùng được — model ' + r.model + ', trả lời trong ' + r.seconds + ' giây.';
+                }, function (err) {
+                  testResult.textContent = '❌ ' + (err && err.message ? err.message : err);
+                });
+              }
+            }, '🧪 Thử key'),
+            h('button', {
+              class: 'btn primary',
+              type: 'button',
+              onclick: function () {
+                s[field] = input.value.trim();
+                saveSettings(s).then(function () {
+                  alert(s[field] ? 'Đã lưu ' + name + ' API key.' : 'Đã xóa ' + name + ' API key.');
+                });
+              }
+            }, 'Lưu key')),
+          testResult);
+      }
+
+      function speedChoice(value, title, detail) {
+        var radio = h('input', { type: 'radio', name: 'geminiSpeed', value: value });
+        radio.checked = (s.geminiSpeed || 'fast') === value;
+        radio.addEventListener('change', function () {
+          s.geminiSpeed = value;
+          saveSettings(s);
+        });
+        return h('label', { class: 'check-row' }, radio, h('span', null, h('strong', null, title), h('div', { class: 'muted small' }, detail)));
+      }
+
+      viewEl.appendChild(freeKeyCard('gemini', 'AIza...', [
+        'Vào aistudio.google.com/apikey → đăng nhập Google → "Create API key" → sao chép rồi dán vào đây. Miễn phí, không cần thẻ. Key chỉ lưu trên điện thoại này.',
+        'Lưu ý: với gói miễn phí, Google có thể dùng dữ liệu gửi lên (ảnh, hồ sơ, xét nghiệm) để cải thiện sản phẩm của họ.'
+      ], h('div', null,
+        speedChoice('fast', 'Nhanh (Flash-Lite)', 'Trả lời nhanh hơn nhiều lần, đủ tốt cho bữa ăn hằng ngày.'),
+        speedChoice('careful', 'Kỹ hơn (Flash)', 'Chậm hơn nhưng đọc ảnh kỹ hơn — dùng khi đọc phiếu xét nghiệm khó.'))));
+
+      viewEl.appendChild(freeKeyCard('groq', 'gsk_...', [
+        'Vào console.groq.com → đăng nhập (Google hoặc email) → API Keys → "Create API Key" → sao chép rồi dán vào đây. Miễn phí, không cần thẻ. Key chỉ lưu trên điện thoại này.',
+        'Groq đọc tối đa 5 ảnh mỗi lần; khi đọc nhiều ảnh xét nghiệm, app tự chia thành nhiều lần.'
+      ]));
 
       var keyInput = h('input', { type: 'password', autocomplete: 'off', placeholder: 'sk-ant-...' });
       keyInput.value = s.apiKey || '';
@@ -1667,7 +1718,7 @@
 
       viewEl.appendChild(h('div', { class: 'card' },
         h('h2', null, 'ℹ️ Về ứng dụng'),
-        h('p', { class: 'muted small' }, 'Ảnh bữa ăn, hồ sơ và kết quả xét nghiệm được gửi tới Anthropic (Claude) hoặc Google (Gemini), tùy cách hỏi đã chọn, để phân tích mỗi khi bạn bấm phân tích; ngoài ra mọi dữ liệu chỉ lưu trên điện thoại.'),
+        h('p', { class: 'muted small' }, 'Ảnh bữa ăn, hồ sơ và kết quả xét nghiệm được gửi tới Anthropic (Claude), Google (Gemini) hoặc Groq, tùy cách hỏi đã chọn, để phân tích mỗi khi bạn bấm phân tích; ngoài ra mọi dữ liệu chỉ lưu trên điện thoại.'),
         h('p', { class: 'muted small' }, 'Mỗi lần hỏi Claude chỉ gửi dữ liệu của hôm nay (ảnh bữa đang ăn, các bữa trong ngày); các ngày trước không được gửi.'),
         h('p', { class: 'muted small' }, 'Ảnh gốc của bữa ăn được giữ ' + PHOTO_KEEP_DAYS + ' ngày rồi tự xóa; ảnh nhỏ trong lịch sử được giữ mãi. File sao lưu không gồm ảnh gốc.'),
         h('p', { class: 'muted small' }, 'Số liệu dinh dưỡng là ước tính của AI và có thể sai. Ứng dụng không thay thế bác sĩ hoặc chuyên gia dinh dưỡng.'),
@@ -1675,7 +1726,7 @@
     });
   }
 
-  var APP_VERSION = '1.6';
+  var APP_VERSION = '1.7';
 
   function exportBackup() {
     Db.exportAll().then(function (data) {
