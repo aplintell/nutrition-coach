@@ -1717,6 +1717,7 @@
         }, '⬇️ Khôi phục từ file')));
 
       viewEl.appendChild(h('div', { class: 'card' },
+        h('img', { class: 'about-logo', src: 'img/logo.png', alt: 'Logo' }),
         h('h2', null, 'ℹ️ Về ứng dụng'),
         h('p', { class: 'muted small' }, 'Ảnh bữa ăn, hồ sơ và kết quả xét nghiệm được gửi tới Anthropic (Claude), Google (Gemini) hoặc Groq, tùy cách hỏi đã chọn, để phân tích mỗi khi bạn bấm phân tích; ngoài ra mọi dữ liệu chỉ lưu trên điện thoại.'),
         h('p', { class: 'muted small' }, 'Mỗi lần hỏi Claude chỉ gửi dữ liệu của hôm nay (ảnh bữa đang ăn, các bữa trong ngày); các ngày trước không được gửi.'),
@@ -1726,7 +1727,7 @@
     });
   }
 
-  var APP_VERSION = '1.7';
+  var APP_VERSION = '1.8';
 
   function exportBackup() {
     Db.exportAll().then(function (data) {

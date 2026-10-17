@@ -631,3 +631,11 @@ table.simple td:last-child {
   padding: 4px 6px;
   cursor: pointer;
 }
+
+/* App logo in the About card (artwork has a light background) */
+.about-logo {
+  display: block;
+  width: 96px;
+  margin: 0 auto 12px;
+  border-radius: 16px;
+}
