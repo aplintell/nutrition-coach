@@ -1,12 +1,14 @@
 // Everything the app asks Claude. Bundled with the Anthropic SDK by esbuild into
 // www/js/ai.bundle.js (npm run build:ai), which exposes it as window.NutritionAI.
 //
-// Each request (meal, targets, plan, labs) is built once and used in one of two ways:
+// Each request (meal, targets, plan, labs) is built once and used in one of three ways:
 // - API mode: sent straight to Anthropic with the user's own API key (paid per use). Requests go
 //   from the phone to Anthropic, which is why the SDK's browser guard is switched off.
 // - Claude app mode (free with a Claude Pro plan): manualRequest() turns it into a question,
 //   with photos, that the user shares to the official Claude app; the reply, copied back, is
 //   checked by parseManualReply() against the same schema.
+// - Gemini mode (free with a Google AI Studio key): askGemini() sends the same question to Gemini
+//   and checks its JSON reply the same way.
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { z } from 'zod';
@@ -327,13 +329,20 @@ export function manualRequest(kind, args) {
     request.text,
     '',
     'REPLY FORMAT — important: reply with ONLY one ```json code block and nothing else.',
+    replyShape(request)
+  ].filter((line, i, all) => line !== '' || all[i - 1] !== '').join('\n');
+  return { text, images: request.images };
+}
+
+// The JSON shape a reply must have, for the Claude app and Gemini (neither gets the zod schema).
+function replyShape(request) {
+  return [
     'Use exactly this shape and these keys, replacing the placeholder values with real ones (numbers as plain numbers, no units inside numbers):',
     '```json',
     JSON.stringify(request.template),
     '```',
     request.hints
-  ].filter((line, i, all) => line !== '' || all[i - 1] !== '').join('\n');
-  return { text, images: request.images };
+  ].join('\n');
 }
 
 function extractJson(reply) {
@@ -416,4 +425,86 @@ export function parseManualReply(kind, reply) {
     throw new AiError('Câu trả lời của Claude không đúng mẫu. Hãy nhắn Claude "trả lời lại đúng mẫu JSON" rồi sao chép và dán lại.');
   }
   return checked.data;
+}
+
+// ---- Gemini mode ----
+
+// Free with a Google AI Studio key (daily limits). "gemini-flash-latest" follows Google's newest
+// Flash model; the fixed name is a fallback in case the alias is unavailable.
+const GEMINI_MODELS = ['gemini-flash-latest', 'gemini-2.5-flash'];
+
+function geminiError(status, message) {
+  if (status === 400 && /api key/i.test(message) || status === 401 || status === 403) {
+    return new AiError('Gemini API key không đúng hoặc chưa được bật. Kiểm tra lại trong Cài đặt.');
+  }
+  if (status === 429) {
+    return new AiError('Đã hết lượt miễn phí của Gemini (giới hạn mỗi phút/mỗi ngày). Đợi một lát hoặc mai thử lại.');
+  }
+  if (status >= 500) {
+    return new AiError('Gemini đang bận hoặc gặp lỗi (' + status + '). Thử lại sau ít phút.');
+  }
+  return new AiError('Gemini từ chối yêu cầu: ' + (message || 'lỗi ' + status));
+}
+
+async function callGemini(apiKey, model, body) {
+  let response;
+  try {
+    response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify(body)
+    });
+  } catch (err) {
+    throw new AiError('Không kết nối được tới Gemini. Kiểm tra mạng rồi thử lại.');
+  }
+  const data = await response.json().catch(() => ({}));
+  return { status: response.status, data };
+}
+
+/**
+ * Asks Gemini for request kind ('meal' | 'targets' | 'plan' | 'labs') with the user's free Google
+ * key. Gemini gets the same question as the Claude app and its JSON reply goes through the same
+ * checks, so the result is the same shape as in the other modes.
+ */
+export async function askGemini(kind, args) {
+  if (!args.apiKey) {
+    throw new AiError('Chưa có Gemini API key. Vào Cài đặt để nhập key (miễn phí tại aistudio.google.com).');
+  }
+  const request = BUILDERS[kind](args);
+  const body = {
+    system_instruction: { parts: [{ text: SYSTEM }] },
+    contents: [{
+      role: 'user',
+      parts: request.images.map((data) => ({ inline_data: { mime_type: 'image/jpeg', data } }))
+        .concat([{ text: request.text + '\n\nReply with only the JSON object. ' + replyShape(request) }])
+    }],
+    generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 16000 }
+  };
+  let answer;
+  for (const model of GEMINI_MODELS) {
+    answer = await callGemini(args.apiKey, model, body);
+    if (answer.status !== 404) {
+      break;
+    }
+  }
+  const { status, data } = answer;
+  if (status !== 200) {
+    throw geminiError(status, data.error && data.error.message);
+  }
+  const candidate = (data.candidates || [])[0];
+  if (!candidate || data.promptFeedback && data.promptFeedback.blockReason) {
+    throw new AiError('Gemini không trả lời yêu cầu này. Thử chụp lại hoặc ghi chú rõ hơn.');
+  }
+  if (candidate.finishReason === 'MAX_TOKENS') {
+    throw new AiError('Câu trả lời của Gemini bị cắt ngắn. Thử lại (với ít ảnh hơn).');
+  }
+  const text = ((candidate.content && candidate.content.parts) || [])
+    .filter((p) => p.text && !p.thought)
+    .map((p) => p.text)
+    .join('');
+  try {
+    return { result: parseManualReply(kind, text), costUsd: 0 };
+  } catch (err) {
+    throw new AiError('Câu trả lời của Gemini bị lỗi định dạng. Thử lại.');
+  }
 }

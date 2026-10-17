@@ -165,12 +165,18 @@
   }
 
   /**
-   * How Claude is asked: 'app' shares the question to the Claude app (free with a Claude Pro
-   * plan) and the user pastes the reply back; 'api' calls the API with the user's key (paid).
+   * How the AI is asked: 'app' shares the question to the Claude app (free with a Claude Pro
+   * plan) and the user pastes the reply back; 'api' calls the Claude API with the user's key
+   * (paid); 'gemini' calls Google Gemini with the user's free key.
    */
   function askMode(settings) {
     settings = settings || settingsCache;
     return settings.mode || (settings.apiKey ? 'api' : 'app');
+  }
+
+  /** True for the modes where the answer comes back straight into the app (one tap). */
+  function isDirect(mode) {
+    return mode === 'api' || mode === 'gemini';
   }
 
   function addCost(costUsd) {
@@ -211,7 +217,7 @@
   function askClaude(kind, busyText, buildArgs) {
     return loadSettings().then(function (settings) {
       var mode = askMode(settings);
-      if (mode === 'api' && !settings.apiKey) {
+      if (mode === 'api' && !settings.apiKey || mode === 'gemini' && !settings.geminiKey) {
         alert('Chưa có API key. Vào Cài đặt để nhập API key, hoặc chọn hỏi qua ứng dụng Claude (miễn phí).');
         location.hash = '#settings';
         return null;
@@ -221,6 +227,14 @@
         if (mode === 'app') {
           return shareToClaude(AI.manualRequest(kind, args)).then(function () {
             return null;
+          });
+        }
+        if (mode === 'gemini') {
+          showBusy(busyText.replace('Claude', 'Gemini'));
+          args.apiKey = settings.geminiKey;
+          return AI.askGemini(kind, args).then(function (answer) {
+            hideBusy();
+            return answer.result;
           });
         }
         showBusy(busyText);
@@ -353,7 +367,7 @@
    * Claude app, then paste its reply back, with a short how-to.
    */
   function askButtons(kind, label, onAsk, onResult, primary) {
-    if (askMode() === 'api') {
+    if (isDirect(askMode())) {
       return h('button', { class: 'btn' + (primary ? ' primary' : ''), type: 'button', onclick: onAsk }, label);
     }
     return h('div', null,
@@ -767,8 +781,8 @@
 
     if (!p.result) {
       viewEl.appendChild(askButtons('meal', '🔍 Phân tích bữa ăn', analyze, showMealResult, true));
-      if (askMode() === 'api') {
-        viewEl.appendChild(h('p', { class: 'muted small' }, 'Claude ước tính món, khối lượng và chất dinh dưỡng. Mất khoảng 10–60 giây.'));
+      if (isDirect(askMode())) {
+        viewEl.appendChild(h('p', { class: 'muted small' }, 'AI ước tính món, khối lượng và chất dinh dưỡng. Mất khoảng 10–60 giây.'));
       }
       return;
     }
@@ -837,7 +851,7 @@
             p.result = null;
             storePendingMeal();
             renderAdd();
-            if (askMode() === 'api') {
+            if (isDirect(askMode())) {
               analyze();
             }
           }
@@ -1367,11 +1381,38 @@
         return h('label', { class: 'check-row' }, radio, h('span', null, h('strong', null, title), h('div', { class: 'muted small' }, detail)));
       }
       viewEl.appendChild(h('div', { class: 'card' },
-        h('h2', null, '🤖 Cách hỏi Claude'),
+        h('h2', null, '🤖 Cách hỏi AI'),
         modeChoice('app', 'Qua ứng dụng Claude (miễn phí với gói Pro)',
           'App gửi câu hỏi và ảnh sang ứng dụng Claude trên điện thoại; bạn bấm gửi, sao chép câu trả lời rồi dán lại vào đây. Tính vào giới hạn sử dụng của gói Pro.'),
-        modeChoice('api', 'API key (trả phí theo lần dùng)',
+        modeChoice('gemini', 'Google Gemini (miễn phí)',
+          'Một chạm, kết quả hiện ngay trong app. Cần Gemini API key miễn phí từ aistudio.google.com (có giới hạn số lần mỗi ngày).'),
+        modeChoice('api', 'Claude API key (trả phí theo lần dùng)',
           'Một chạm, kết quả hiện ngay trong app. Cần API key và tiền nạp ở console.anthropic.com (khoảng vài cent mỗi bữa).')));
+
+      var geminiInput = h('input', { type: 'password', autocomplete: 'off', placeholder: 'AIza...' });
+      geminiInput.value = s.geminiKey || '';
+      viewEl.appendChild(h('div', { class: 'card', hidden: mode !== 'gemini' },
+        h('h2', null, '🔑 Gemini API key'),
+        h('p', { class: 'muted small' }, 'Vào aistudio.google.com/apikey → đăng nhập Google → "Create API key" → sao chép rồi dán vào đây. Miễn phí, không cần thẻ. Key chỉ lưu trên điện thoại này.'),
+        h('p', { class: 'muted small' }, 'Lưu ý: với gói miễn phí, Google có thể dùng dữ liệu gửi lên (ảnh, hồ sơ, xét nghiệm) để cải thiện sản phẩm của họ.'),
+        h('label', { class: 'field' }, 'API key', geminiInput),
+        h('button', {
+          class: 'link-btn',
+          type: 'button',
+          onclick: function () {
+            geminiInput.type = geminiInput.type === 'password' ? 'text' : 'password';
+          }
+        }, 'Hiện / ẩn key'),
+        h('button', {
+          class: 'btn primary',
+          type: 'button',
+          onclick: function () {
+            s.geminiKey = geminiInput.value.trim();
+            saveSettings(s).then(function () {
+              alert(s.geminiKey ? 'Đã lưu Gemini API key.' : 'Đã xóa Gemini API key.');
+            });
+          }
+        }, 'Lưu key')));
 
       var keyInput = h('input', { type: 'password', autocomplete: 'off', placeholder: 'sk-ant-...' });
       keyInput.value = s.apiKey || '';
@@ -1417,7 +1458,7 @@
 
       viewEl.appendChild(h('div', { class: 'card' },
         h('h2', null, 'ℹ️ Về ứng dụng'),
-        h('p', { class: 'muted small' }, 'Ảnh bữa ăn, hồ sơ và kết quả xét nghiệm được gửi tới Anthropic (Claude) để phân tích mỗi khi bạn bấm phân tích; ngoài ra mọi dữ liệu chỉ lưu trên điện thoại.'),
+        h('p', { class: 'muted small' }, 'Ảnh bữa ăn, hồ sơ và kết quả xét nghiệm được gửi tới Anthropic (Claude) hoặc Google (Gemini), tùy cách hỏi đã chọn, để phân tích mỗi khi bạn bấm phân tích; ngoài ra mọi dữ liệu chỉ lưu trên điện thoại.'),
         h('p', { class: 'muted small' }, 'Mỗi lần hỏi Claude chỉ gửi dữ liệu của hôm nay (ảnh bữa đang ăn, các bữa trong ngày); các ngày trước không được gửi.'),
         h('p', { class: 'muted small' }, 'Ảnh gốc của bữa ăn được giữ ' + PHOTO_KEEP_DAYS + ' ngày rồi tự xóa; ảnh nhỏ trong lịch sử được giữ mãi. File sao lưu không gồm ảnh gốc.'),
         h('p', { class: 'muted small' }, 'Số liệu dinh dưỡng là ước tính của AI và có thể sai. Ứng dụng không thay thế bác sĩ hoặc chuyên gia dinh dưỡng.'),
@@ -1425,7 +1466,7 @@
     });
   }
 
-  var APP_VERSION = '1.3';
+  var APP_VERSION = '1.5';
 
   function exportBackup() {
     Db.exportAll().then(function (data) {
