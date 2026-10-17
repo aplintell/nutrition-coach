@@ -100,7 +100,15 @@ function describeProfile(profile, labs) {
 
 const ZERO_NUTRIENTS = Object.fromEntries(NUTRIENTS.map((n) => [n.key, 0]));
 
-function mealRequest({ imageBase64, note, profile, labs, eatenToday, now }) {
+// One line about the day's logged exercise, e.g. "Cầu lông 12 set, Nhảy dây 2000 lần (~990 kcal extra)".
+function describeExercise(exercise) {
+  return exercise && exercise.length
+    ? 'Exercise logged today: ' + exercise.map((e) => `${e.name} ${e.amount} ${e.unit}`).join(', ')
+      + ` (about ${exercise.reduce((sum, e) => sum + e.kcal, 0)} kcal burned above resting).`
+    : 'No exercise logged today.';
+}
+
+function mealRequest({ imageBase64, note, profile, labs, eatenToday, exercise, now }) {
   return {
     images: imageBase64 ? [imageBase64] : [],
     schema: MealResult,
@@ -109,6 +117,7 @@ function mealRequest({ imageBase64, note, profile, labs, eatenToday, now }) {
       describeProfile(profile, labs),
       '',
       `Current local time: ${now}.`,
+      describeExercise(exercise),
       'Already eaten today (nutrient totals, before this meal):',
       JSON.stringify(eatenToday || {}),
       '',
@@ -147,6 +156,7 @@ function targetsRequest({ profile, labs, today }) {
       '- min: the amount to reach each day (recommended intake), or null when there is no minimum (e.g. sugar, sodium, cholesterol, purine, saturated fat);',
       '- max: the most they should have in a day (upper limit, or a lower medical limit when their labs or conditions call for it), or null when there is no meaningful maximum.',
       'Base energy on age, sex, height, weight, activity and goal. Adjust for their lab results and conditions.',
+      'The person logs sport and workouts separately each day, and the app adds the energy of each day\'s exercise on top of these targets. So set the targets for a day WITHOUT sport or workouts: count only the activity of their job and daily life (keep heavy manual work if that is their job), even if activity_level mentions weekly training sessions.',
       'explanation: a short Vietnamese explanation of the main choices (energy, and anything changed because of labs/conditions).',
       'lab_flags: one entry per lab result that is outside its normal range or worth attention, with simple dietary advice; empty list if none.'
     ].join('\n'),
@@ -159,7 +169,7 @@ function targetsRequest({ profile, labs, today }) {
   };
 }
 
-function planRequest({ profile, labs, targets, meals, totals, now }) {
+function planRequest({ profile, labs, targets, meals, totals, exercise, now }) {
   return {
     images: [],
     schema: PlanResult,
@@ -167,10 +177,11 @@ function planRequest({ profile, labs, targets, meals, totals, now }) {
     text: [
       describeProfile(profile, labs),
       '',
-      'Daily targets (min / max per nutrient key):',
+      'Daily targets (min / max per nutrient key), already raised for today\'s exercise:',
       JSON.stringify(targets),
       '',
       `Current local time: ${now}.`,
+      describeExercise(exercise),
       'Meals eaten so far today:',
       (meals || []).map((m) => `- ${m.time} ${m.name}: ${m.items}`).join('\n') || '(none yet)',
       'Totals so far:',

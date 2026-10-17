@@ -602,3 +602,32 @@ table.simple td:last-child {
   line-height: 26px;
   padding: 0;
 }
+
+/* Exercise log rows */
+.ex-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.ex-row .name {
+  flex: 1;
+  min-width: 0;
+}
+
+.ex-row .kcal {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.ex-row button {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1rem;
+  padding: 4px 6px;
+  cursor: pointer;
+}

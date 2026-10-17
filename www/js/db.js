@@ -4,10 +4,11 @@
   //   labs:  one record per lab test result
   //   meals: one record per saved meal (with a small photo thumbnail), indexed by day (YYYY-MM-DD)
   //   plans: the latest "rest of the day" plan per day, keyed by day
+  //   exercises: one record per workout logged, indexed by day (YYYY-MM-DD)
   //   photos: the full-size meal photo, keyed by meal id, kept only for PHOTO_KEEP_DAYS (app.js)
   //           (not included in backups, to keep the backup file small)
   var DB_NAME = 'nutrition-coach';
-  var DB_VERSION = 2;
+  var DB_VERSION = 3;
   var dbPromise = null;
 
   function openDb() {
@@ -34,6 +35,10 @@
         if (!db.objectStoreNames.contains('photos')) {
           var photos = db.createObjectStore('photos', { keyPath: 'mealId' });
           photos.createIndex('day', 'day');
+        }
+        if (!db.objectStoreNames.contains('exercises')) {
+          var exercises = db.createObjectStore('exercises', { keyPath: 'id', autoIncrement: true });
+          exercises.createIndex('day', 'day');
         }
       };
       req.onsuccess = function () {
@@ -125,7 +130,8 @@
     /** Everything, for the backup file. */
     exportAll: function () {
       return Promise.all([
-        Db.getKv('profile'), Db.getKv('targets'), Db.getAll('labs'), Db.getAll('meals'), Db.getAll('plans')
+        Db.getKv('profile'), Db.getKv('targets'), Db.getAll('labs'), Db.getAll('meals'), Db.getAll('plans'),
+        Db.getAll('exercises')
       ]).then(function (r) {
         return {
           app: 'nutrition-coach',
@@ -135,7 +141,8 @@
           targets: r[1] || null,
           labs: r[2],
           meals: r[3],
-          plans: r[4]
+          plans: r[4],
+          exercises: r[5]
         };
       });
     },
@@ -145,7 +152,7 @@
       if (!data || data.app !== 'nutrition-coach') {
         return Promise.reject(new Error('Đây không phải file sao lưu của ứng dụng này.'));
       }
-      return Promise.all(['labs', 'meals', 'plans', 'photos'].map(Db.clear)).then(function () {
+      return Promise.all(['labs', 'meals', 'plans', 'photos', 'exercises'].map(Db.clear)).then(function () {
         var writes = [Db.setKv('profile', data.profile || null), Db.setKv('targets', data.targets || null)];
         (data.labs || []).forEach(function (x) {
           writes.push(Db.put('labs', x));
@@ -155,6 +162,9 @@
         });
         (data.plans || []).forEach(function (x) {
           writes.push(Db.put('plans', x));
+        });
+        (data.exercises || []).forEach(function (x) {
+          writes.push(Db.put('exercises', x));
         });
         return Promise.all(writes);
       });
