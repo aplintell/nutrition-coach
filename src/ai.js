@@ -199,11 +199,13 @@ function labsRequest({ imagesBase64 }) {
     effort: 'medium',
     text: [
       count === 1
-        ? 'This is a photo of a medical lab report (blood and/or urine tests), probably in Vietnamese.'
-        : `These ${count} photos are pages of one or more medical lab reports (blood and/or urine tests), probably in Vietnamese.`,
-      'Copy every test result exactly as printed: the test name (keep the report\'s name, add the common Vietnamese/English name in brackets if it is an abbreviation), the value as printed, the unit, and the reference range as printed (empty string if none).',
-      'type: blood, urine, or other. date: the sampling/report date of the report that result is on, as YYYY-MM-DD, or null if not shown.',
-      'If the same result from the same report appears on more than one photo (overlapping shots), list it once.',
+        ? 'This is a photo or phone screenshot of a medical lab report (blood and/or urine tests), probably in Vietnamese.'
+        : `These ${count} images are photos or phone screenshots (e.g. of a clinic's app) of one or more medical lab reports (blood and/or urine tests), probably in Vietnamese.`,
+      'Copy every test result exactly as printed: the test name (keep the report\'s name, add the common Vietnamese/English name in brackets if it is an abbreviation), the value as printed (including words such as Negative or Norm), the unit, and the reference range as printed.',
+      'reference_range: as printed; if none is shown but the value is visibly marked abnormal (red colour, H/L, arrow, star), write "flagged abnormal on report"; otherwise an empty string.',
+      'type: blood, urine, or other — use the section headings (e.g. "Nước tiểu" = urine; "Huyết học", "Tiểu đường", "Chức năng thận/gan", "Mỡ máu", "Cơ xương khớp", "Dấu ấn ung thư" = blood). Vietnamese dates are day first (01.10.2026 = 2026-10-01).',
+      'date: the sampling/report date of the report that result is on, as YYYY-MM-DD, or null if not shown.',
+      'Screenshots of a scrolling screen overlap: if the same result (same name and same type) from the same report appears on more than one image, list it once. A test with the same name in a different section (e.g. blood Glucose and urine Glucose) is a separate result.',
       'Do not invent values. If something is unreadable, leave it out.'
     ].join('\n'),
     template: {

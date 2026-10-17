@@ -299,7 +299,35 @@
       if (text && text.indexOf('{') !== -1) {
         return text;
       }
-      return prompt('Chưa thấy câu trả lời của Claude trong bộ nhớ tạm. Hãy dán câu trả lời vào đây:', '') || '';
+      return askForReply();
+    });
+  }
+
+  /**
+   * An in-app paste box for Claude's reply. The system prompt() dialog grows with the text and
+   * breaks the screen when a long reply is pasted; this box keeps a fixed height and scrolls.
+   */
+  function askForReply() {
+    return new Promise(function (resolve) {
+      var box = h('textarea', {
+        class: 'paste-box',
+        placeholder: 'Giữ ô này → Dán',
+        spellcheck: 'false',
+        autocomplete: 'off'
+      });
+      function close(text) {
+        document.body.removeChild(overlay);
+        resolve(text);
+      }
+      var overlay = h('div', { class: 'paste-overlay' },
+        h('div', { class: 'paste-dialog', role: 'dialog', 'aria-label': 'Dán câu trả lời của Claude' },
+          h('p', null, 'Chưa thấy câu trả lời của Claude trong bộ nhớ tạm. Hãy dán câu trả lời vào đây:'),
+          box,
+          h('div', { class: 'btn-row' },
+            h('button', { class: 'btn', type: 'button', onclick: function () { close(''); } }, 'Hủy'),
+            h('button', { class: 'btn primary', type: 'button', onclick: function () { close(box.value); } }, 'Xong'))));
+      document.body.appendChild(overlay);
+      box.focus();
     });
   }
 
