@@ -639,3 +639,15 @@ table.simple td:last-child {
   margin: 0 auto 12px;
   border-radius: 16px;
 }
+
+/* Held 0.5 s to add more times: no text selection or callout while holding */
+.ex-row {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.ex-more {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}

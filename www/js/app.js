@@ -595,7 +595,22 @@
 
   // What can be logged. Energy uses MET values (Compendium of Physical Activities); counted
   // exercises (sets, skips, reps) are turned into minutes with a typical pace.
+  // Everything in the picker is counted in times (lần): reps, skips, or badminton sets.
   var EXERCISES = [
+    { id: 'skipping', name: 'Skipping (6mm Rope)', unit: 'lần', perMinute: 110, met: 11.8 },
+    { id: 'sit-up', name: 'Sit-up', unit: 'lần', perMinute: 25, met: 3.8 },
+    { id: 'push-up', name: 'Push-up', unit: 'lần', perMinute: 25, met: 8 },
+    { id: 'bench-dip', name: 'Bench Dip', unit: 'lần', perMinute: 20, met: 5 },
+    { id: 'kb-halo', name: 'Kettlebell Halo (6kg)', unit: 'lần', perMinute: 20, met: 3.5 },
+    { id: 'kb-around-world', name: 'Kettlebell Around the World (6kg)', unit: 'lần', perMinute: 25, met: 3.5 },
+    { id: 'goblet-squat', name: 'Goblet Squat (6kg)', unit: 'lần', perMinute: 20, met: 5 },
+    { id: 'kb-goblet-curl', name: 'Kettlebell Goblet Curl (6kg)', unit: 'lần', perMinute: 20, met: 3.5 },
+    { id: 'kb-triceps-ext', name: 'Kettlebell Overhead Triceps Extension (6kg)', unit: 'lần', perMinute: 20, met: 3.5 },
+    { id: 'badminton-10', name: 'Badminton Set - 10 mins', unit: 'lần', minutesEach: 10, met: 5.5 },
+    { id: 'badminton-15', name: 'Badminton Set - 15 mins', unit: 'lần', minutesEach: 15, met: 5.5 }
+  ];
+  // Older choices, no longer offered but still needed to recompute or copy entries logged with them.
+  var OLD_EXERCISES = [
     { id: 'badminton-set', name: 'Cầu lông', unit: 'set', minutesEach: 12, met: 5.5 },
     { id: 'badminton', name: 'Cầu lông', unit: 'phút', met: 5.5 },
     { id: 'rope', name: 'Nhảy dây', unit: 'lần', perMinute: 110, met: 11.8 },
@@ -612,7 +627,7 @@
     { id: 'other', name: 'Môn khác (vừa sức)', unit: 'phút', met: 5 }
   ];
   var EXERCISE_BY_ID = {};
-  EXERCISES.forEach(function (e) {
+  EXERCISES.concat(OLD_EXERCISES).forEach(function (e) {
     EXERCISE_BY_ID[e.id] = e;
   });
   var DEFAULT_WEIGHT_KG = 65;
@@ -673,7 +688,7 @@
 
   // ---- Screens ----
 
-  var TABS = ['today', 'history', 'profile', 'settings'];
+  var TABS = ['today', 'food', 'workout', 'history', 'profile', 'settings'];
 
   function setScreen(title, tab, showBack) {
     titleEl.textContent = title;
@@ -722,31 +737,59 @@
         burned && targets ? h('p', { class: 'muted small' }, '🏃 Mục tiêu đã cộng thêm ~' + burned + ' kcal nhờ tập luyện hôm nay.') : null,
         nutrientBars(totals, targets)));
 
-      viewEl.appendChild(exerciseCard(key, exercises, profile));
-
-      viewEl.appendChild(h('div', { class: 'card' },
-        h('h2', null, 'Bữa ăn (' + meals.length + ')'),
-        meals.length === 0 ? h('p', { class: 'muted' }, isToday ? 'Trước khi ăn, bấm "+ Bữa ăn" và chụp ảnh món ăn.' : 'Không có bữa ăn.') : null,
-        meals.map(function (m) {
-          return h('a', { class: 'meal-row', href: '#meal/' + m.id },
-            m.thumb ? h('img', { class: 'thumb', src: m.thumb, alt: '' }) : h('div', { class: 'thumb' }, '🍽️'),
-            h('div', { class: 'info' },
-              h('div', { class: 'name' }, m.name),
-              h('div', { class: 'muted small' }, m.time + (m.portion !== 1 ? ' · ' + Math.round(m.portion * 100) + '% phần' : ''))),
-            h('div', { class: 'kcal' }, fmt(m.nutrients.energy_kcal, 'kcal') + ' kcal'));
-        })));
-
       if (isToday) {
+        // Meals and workouts have their own tabs; today shows only a one-line count of each.
+        viewEl.appendChild(h('div', { class: 'grid-2', style: 'margin:-10px 0 14px' },
+          h('a', { class: 'btn', href: '#food' }, '🍽️ ' + meals.length + ' bữa ăn'),
+          h('a', { class: 'btn', href: '#workout' }, '🏃 ' + exercises.length + ' bài tập' + (burned ? ' · ~' + burned + ' kcal' : ''))));
         viewEl.appendChild(planCard(key, meals, totals, targets, plan, exercises));
-        viewEl.appendChild(h('button', {
-          class: 'fab',
-          type: 'button',
-          onclick: function () {
-            location.hash = '#add';
-          }
-        }, '+ Bữa ăn'));
+      } else {
+        viewEl.appendChild(exerciseCard(key, exercises, profile));
+        viewEl.appendChild(mealsCard(meals, false));
       }
       viewEl.appendChild(h('p', { class: 'disclaimer' }, 'Số liệu là ước tính của AI, không thay thế lời khuyên của bác sĩ.'));
+    });
+  }
+
+  function mealsCard(meals, isToday) {
+    return h('div', { class: 'card' },
+      h('h2', null, 'Bữa ăn (' + meals.length + ')'),
+      meals.length === 0 ? h('p', { class: 'muted' }, isToday ? 'Trước khi ăn, bấm "+ Bữa ăn" và chụp ảnh món ăn.' : 'Không có bữa ăn.') : null,
+      meals.map(function (m) {
+        return h('a', { class: 'meal-row', href: '#meal/' + m.id },
+          m.thumb ? h('img', { class: 'thumb', src: m.thumb, alt: '' }) : h('div', { class: 'thumb' }, '🍽️'),
+          h('div', { class: 'info' },
+            h('div', { class: 'name' }, m.name),
+            h('div', { class: 'muted small' }, m.time + (m.portion !== 1 ? ' · ' + Math.round(m.portion * 100) + '% phần' : ''))),
+          h('div', { class: 'kcal' }, fmt(m.nutrients.energy_kcal, 'kcal') + ' kcal'));
+      }));
+  }
+
+  // Food: today's meals and adding one
+  function renderFood() {
+    var key = dayKey();
+    setScreen('Food · ' + dayTitle(key), 'food', false);
+    return Db.getAllByIndex('meals', 'day', key).then(function (meals) {
+      meals.sort(function (a, b) {
+        return a.createdAt < b.createdAt ? -1 : 1;
+      });
+      viewEl.appendChild(mealsCard(meals, true));
+      viewEl.appendChild(h('button', {
+        class: 'fab',
+        type: 'button',
+        onclick: function () {
+          location.hash = '#add';
+        }
+      }, '+ Bữa ăn'));
+    });
+  }
+
+  // Workout: today's exercise log
+  function renderWorkout() {
+    var key = dayKey();
+    setScreen('Workout · ' + dayTitle(key), 'workout', false);
+    return Promise.all([Db.getAllByIndex('exercises', 'day', key), Db.getKv('profile')]).then(function (r) {
+      viewEl.appendChild(exerciseCard(key, r[0], r[1]));
     });
   }
 
@@ -765,7 +808,7 @@
 
     if (exercises.length) {
       card.appendChild(h('div', null, exercises.map(function (e) {
-        return h('div', { class: 'ex-row' },
+        var row = h('div', { class: 'ex-row' },
           h('span', { class: 'name' }, e.name + ' · ' + e.amount + ' ' + e.unit),
           h('span', { class: 'kcal' }, '~' + e.kcal + ' kcal'),
           h('button', {
@@ -775,7 +818,16 @@
               Db.remove('exercises', e.id).then(rerenderKeepingScroll);
             }
           }, '✕'));
+        var wrap = h('div', null, row);
+        onLongPress(row, function () {
+          if (!wrap.querySelector('form')) {
+            wrap.appendChild(addMoreForm(e, weight));
+          }
+          wrap.querySelector('input').focus();
+        });
+        return wrap;
       })));
+      card.appendChild(h('p', { class: 'muted small' }, 'Giữ một bài tập 0,5 giây để cộng thêm số lần.'));
     } else {
       card.appendChild(h('p', { class: 'muted' }, 'Hôm nay chưa tập? Nếu có tập, thêm vào đây để mục tiêu năng lượng của ngày tăng theo.'));
     }
@@ -794,14 +846,14 @@
     }
 
     var typeSelect = h('select', { name: 'type' }, EXERCISES.map(function (e) {
-      return h('option', { value: e.id }, e.name + ' (' + e.unit + ')');
+      return h('option', { value: e.id }, e.name);
     }));
-    var amountInput = h('input', { name: 'amount', type: 'number', inputmode: 'decimal', min: '0', step: 'any', placeholder: 'VD: 12' });
-    var unitLabel = h('span', null, 'Số set');
+    var amountInput = h('input', { name: 'amount', type: 'number', inputmode: 'decimal', min: '0', step: 'any', placeholder: 'VD: 20' });
+    var unitLabel = h('span', null, 'Số lần (Times)');
     var preview = h('p', { class: 'muted small' }, '');
     function update() {
       var ex = EXERCISE_BY_ID[typeSelect.value];
-      unitLabel.textContent = { set: 'Số set', 'lần': 'Số lần', 'phút': 'Số phút' }[ex.unit];
+      unitLabel.textContent = { set: 'Số set', 'lần': 'Số lần (Times)', 'phút': 'Số phút' }[ex.unit];
       var amount = parseFloat(amountInput.value);
       preview.textContent = amount > 0
         ? '≈ ' + Math.round(exerciseMinutes(ex, amount)) + ' phút, tiêu hao thêm ~' + exerciseKcal(ex, amount, weight) + ' kcal'
@@ -821,7 +873,7 @@
       e.preventDefault();
       var amount = parseFloat(amountInput.value);
       if (!(amount > 0)) {
-        alert('Hãy nhập số set / số lần / số phút.');
+        alert('Hãy nhập số lần.');
         return;
       }
       addExercise(EXERCISE_BY_ID[typeSelect.value], amount).then(rerenderKeepingScroll);
@@ -865,6 +917,90 @@
       }).join(', ')), showForm);
     });
     return card;
+  }
+
+  /** Calls fn when el is held for half a second without moving (a tap or a scroll doesn't count). */
+  function onLongPress(el, fn) {
+    var timer = null;
+    var startX = 0;
+    var startY = 0;
+    function cancel() {
+      clearTimeout(timer);
+      timer = null;
+    }
+    el.addEventListener('pointerdown', function (ev) {
+      if (ev.target.closest('button')) {
+        return;
+      }
+      startX = ev.clientX;
+      startY = ev.clientY;
+      cancel();
+      timer = setTimeout(function () {
+        timer = null;
+        if (navigator.vibrate) {
+          navigator.vibrate(30);
+        }
+        fn();
+      }, 500);
+    });
+    el.addEventListener('pointermove', function (ev) {
+      if (timer && Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) > 10) {
+        cancel();
+      }
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (type) {
+      el.addEventListener(type, cancel);
+    });
+    el.addEventListener('contextmenu', function (ev) {
+      ev.preventDefault();
+    });
+  }
+
+  /** Inline form under an exercise row: the number typed is added to the times already logged. */
+  function addMoreForm(e, weight) {
+    var ex = EXERCISE_BY_ID[e.type];
+    function totalFor(amount) {
+      var total = Math.round((e.amount + amount) * 100) / 100;
+      return {
+        amount: total,
+        // An entry whose exercise type is unknown keeps its own energy per unit.
+        minutes: Math.round(ex ? exerciseMinutes(ex, total) : (e.minutes || 0) * total / e.amount),
+        kcal: ex ? exerciseKcal(ex, total, weight) : Math.round(e.kcal * total / e.amount)
+      };
+    }
+    var input = h('input', { type: 'number', inputmode: 'decimal', min: '0', step: 'any', placeholder: 'VD: 20' });
+    var preview = h('p', { class: 'muted small' }, '');
+    input.addEventListener('input', function () {
+      var amount = parseFloat(input.value);
+      if (amount > 0) {
+        var t = totalFor(amount);
+        preview.textContent = 'Tổng: ' + e.amount + ' + ' + amount + ' = ' + t.amount + ' ' + e.unit + ', ~' + t.kcal + ' kcal';
+      } else {
+        preview.textContent = '';
+      }
+    });
+    var form = h('form', { class: 'ex-more', novalidate: true },
+      h('label', { class: 'field' }, 'Thêm số lần cho ' + e.name, input),
+      preview,
+      h('div', { class: 'grid-2' },
+        h('button', { class: 'btn primary', type: 'submit' }, 'Cộng thêm'),
+        h('button', {
+          class: 'btn',
+          type: 'button',
+          onclick: function () {
+            form.remove();
+          }
+        }, 'Hủy')));
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var amount = parseFloat(input.value);
+      if (!(amount > 0)) {
+        alert('Hãy nhập số lần muốn cộng thêm.');
+        return;
+      }
+      Db.put('exercises', Object.assign({}, e, totalFor(amount))).then(rerenderKeepingScroll);
+    });
+    return form;
   }
 
   function planCard(key, meals, totals, targets, plan, exercises) {
@@ -950,7 +1086,7 @@
   var pending = null;
 
   function renderAdd() {
-    setScreen('Thêm bữa ăn', 'today', true);
+    setScreen('Thêm bữa ăn', 'food', true);
     if (!pending) {
       pending = { photo: null, note: '', result: null, portion: 1 };
     }
@@ -1066,7 +1202,7 @@
           type: 'button',
           onclick: function () {
             clearPendingMeal();
-            location.hash = '#today';
+            location.hash = '#food';
           }
         }, 'Bỏ')));
     });
@@ -1092,7 +1228,7 @@
         return p.photo ? Db.put('photos', { mealId: mealId, day: dayKey(now), dataUrl: p.photo.preview }) : null;
       }).then(function () {
         clearPendingMeal();
-        location.hash = '#today';
+        location.hash = '#food';
       }, function (err) {
         alert('Không lưu được: ' + err.message);
       });
@@ -1150,7 +1286,7 @@
 
   // One saved meal
   function renderMeal(id) {
-    setScreen('Bữa ăn', 'today', true);
+    setScreen('Bữa ăn', 'food', true);
     return Promise.all([Db.get('meals', id), Db.get('photos', id)]).then(function (r) {
       var m = r[0];
       var photo = r[1];
@@ -1368,7 +1504,7 @@
           field('Chiều cao (cm)', input('height_cm', 'number', { inputmode: 'decimal', step: 'any' })),
           field('Cân nặng (kg)', input('weight_kg', 'number', { inputmode: 'decimal', step: 'any' }))),
         field('Mức vận động', select('activity', ['Ít vận động (ngồi nhiều)', 'Vận động nhẹ (1–3 buổi/tuần)', 'Vận động vừa (3–5 buổi/tuần)', 'Vận động nhiều (6–7 buổi/tuần)', 'Lao động nặng'])),
-        h('p', { class: 'muted small', style: 'margin-top:-6px' }, 'Mục tiêu mỗi ngày được tính cho ngày không tập. Ngày nào tập thì ghi bài tập ở màn hình Hôm nay, năng lượng sẽ được cộng thêm cho riêng ngày đó.'),
+        h('p', { class: 'muted small', style: 'margin-top:-6px' }, 'Mục tiêu mỗi ngày được tính cho ngày không tập. Ngày nào tập thì ghi bài tập ở màn hình Workout, năng lượng sẽ được cộng thêm cho riêng ngày đó.'),
         field('Mục tiêu', select('goal', ['Giữ cân', 'Giảm cân', 'Tăng cân', 'Tăng cơ'])),
         field('Bệnh lý, thuốc đang dùng', textarea('conditions', 'VD: gout, tiểu đường type 2, cao huyết áp; đang uống metformin')),
         field('Chế độ ăn, dị ứng, sở thích', textarea('dietNotes', 'VD: dị ứng tôm, không ăn được cay, ăn chay ngày rằm')),
@@ -1727,7 +1863,7 @@
     });
   }
 
-  var APP_VERSION = '1.8';
+  var APP_VERSION = '1.9';
 
   function exportBackup() {
     Db.exportAll().then(function (data) {
@@ -1798,6 +1934,10 @@
       done = renderMeal(parseInt(parts[1], 10));
     } else if (screen === 'day') {
       done = renderDay(parts[1]);
+    } else if (screen === 'food') {
+      done = renderFood();
+    } else if (screen === 'workout') {
+      done = renderWorkout();
     } else if (screen === 'history') {
       done = renderHistory();
     } else if (screen === 'profile') {
@@ -1834,7 +1974,7 @@
 
   // Coming back to the app on a new day shows the new day.
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden && (location.hash === '' || location.hash === '#today')) {
+    if (!document.hidden && ['', '#today', '#food', '#workout'].indexOf(location.hash) !== -1) {
       route();
     }
   });
