@@ -606,11 +606,12 @@
     { id: 'goblet-squat', name: 'Goblet Squat (5kg)', unit: 'lần', perMinute: 20, met: 5 },
     { id: 'kb-goblet-curl', name: 'Kettlebell Goblet Curl (5kg)', unit: 'lần', perMinute: 20, met: 3.5 },
     { id: 'kb-triceps-ext', name: 'Kettlebell Overhead Triceps Extension (5kg)', unit: 'lần', perMinute: 20, met: 3.5 },
-    { id: 'badminton-10', name: 'Badminton Set - 10 mins', unit: 'lần', minutesEach: 10, met: 5.5 },
-    { id: 'badminton-15', name: 'Badminton Set - 15 mins', unit: 'lần', minutesEach: 15, met: 5.5 }
+    { id: 'badminton-1', name: 'Badminton Set - 1 minute', unit: 'lần', minutesEach: 1, met: 5.5 }
   ];
   // Older choices, no longer offered but still needed to recompute or copy entries logged with them.
   var OLD_EXERCISES = [
+    { id: 'badminton-10', name: 'Badminton Set - 10 mins', unit: 'lần', minutesEach: 10, met: 5.5 },
+    { id: 'badminton-15', name: 'Badminton Set - 15 mins', unit: 'lần', minutesEach: 15, met: 5.5 },
     { id: 'badminton-set', name: 'Cầu lông', unit: 'set', minutesEach: 12, met: 5.5 },
     { id: 'badminton', name: 'Cầu lông', unit: 'phút', met: 5.5 },
     { id: 'rope', name: 'Nhảy dây', unit: 'lần', perMinute: 110, met: 11.8 },
@@ -893,39 +894,17 @@
       onclick: function () {
         form.hidden = false;
         showForm.hidden = true;
-        // Pick the exercise first; the number comes after.
+        // Pick the exercise first, with the list already open; the number comes after.
         typeSelect.focus();
+        try {
+          typeSelect.showPicker();
+        } catch (err) {
+          // Older WebViews can't open a dropdown from code; it stays focused for a tap.
+        }
       }
     }, '+ Thêm bài tập');
     card.appendChild(showForm);
     card.appendChild(form);
-
-    // Most days are the same routine: copy the last day that had exercise.
-    Db.getAll('exercises').then(function (all) {
-      var lastDay = all.map(function (e) {
-        return e.day;
-      }).filter(function (d) {
-        return d < key;
-      }).sort().pop();
-      if (!lastDay) {
-        return;
-      }
-      var routine = all.filter(function (e) {
-        return e.day === lastDay;
-      });
-      card.insertBefore(h('button', {
-        class: 'btn',
-        type: 'button',
-        onclick: function () {
-          Promise.all(routine.map(function (e) {
-            var ex = EXERCISE_BY_ID[e.type] || EXERCISE_BY_ID.other;
-            return addExercise(ex, e.amount);
-          })).then(rerenderKeepingScroll);
-        }
-      }, '↺ Giống buổi tập ' + dayTitle(lastDay) + ': ' + routine.map(function (e) {
-        return exerciseName(e) + ' ' + e.amount + ' ' + e.unit;
-      }).join(', ')), showForm);
-    });
     return card;
   }
 
@@ -1906,7 +1885,7 @@
     });
   }
 
-  var APP_VERSION = '1.11';
+  var APP_VERSION = '1.12';
 
   function exportBackup() {
     Db.exportAll().then(function (data) {
