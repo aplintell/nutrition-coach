@@ -601,11 +601,11 @@
     { id: 'sit-up', name: 'Sit-up', unit: 'lần', perMinute: 25, met: 3.8 },
     { id: 'push-up', name: 'Push-up', unit: 'lần', perMinute: 25, met: 8 },
     { id: 'bench-dip', name: 'Bench Dip', unit: 'lần', perMinute: 20, met: 5 },
-    { id: 'kb-halo', name: 'Kettlebell Halo (6kg)', unit: 'lần', perMinute: 20, met: 3.5 },
-    { id: 'kb-around-world', name: 'Kettlebell Around the World (6kg)', unit: 'lần', perMinute: 25, met: 3.5 },
-    { id: 'goblet-squat', name: 'Goblet Squat (6kg)', unit: 'lần', perMinute: 20, met: 5 },
-    { id: 'kb-goblet-curl', name: 'Kettlebell Goblet Curl (6kg)', unit: 'lần', perMinute: 20, met: 3.5 },
-    { id: 'kb-triceps-ext', name: 'Kettlebell Overhead Triceps Extension (6kg)', unit: 'lần', perMinute: 20, met: 3.5 },
+    { id: 'kb-halo', name: 'Kettlebell Halo (5kg)', unit: 'lần', perMinute: 20, met: 3.5 },
+    { id: 'kb-around-world', name: 'Kettlebell Around the World (5kg)', unit: 'lần', perMinute: 25, met: 3.5 },
+    { id: 'goblet-squat', name: 'Goblet Squat (5kg)', unit: 'lần', perMinute: 20, met: 5 },
+    { id: 'kb-goblet-curl', name: 'Kettlebell Goblet Curl (5kg)', unit: 'lần', perMinute: 20, met: 3.5 },
+    { id: 'kb-triceps-ext', name: 'Kettlebell Overhead Triceps Extension (5kg)', unit: 'lần', perMinute: 20, met: 3.5 },
     { id: 'badminton-10', name: 'Badminton Set - 10 mins', unit: 'lần', minutesEach: 10, met: 5.5 },
     { id: 'badminton-15', name: 'Badminton Set - 15 mins', unit: 'lần', minutesEach: 15, met: 5.5 }
   ];
@@ -631,6 +631,12 @@
     EXERCISE_BY_ID[e.id] = e;
   });
   var DEFAULT_WEIGHT_KG = 65;
+
+  /** Current name of a logged entry's exercise, so renamed exercises (6kg → 5kg) show the new name. */
+  function exerciseName(e) {
+    var ex = EXERCISE_BY_ID[e.type];
+    return ex ? ex.name : e.name;
+  }
 
   function exerciseMinutes(ex, amount) {
     return ex.minutesEach ? amount * ex.minutesEach : ex.perMinute ? amount / ex.perMinute : amount;
@@ -671,7 +677,7 @@
 
   function exerciseForAi(exercises) {
     return exercises.map(function (e) {
-      return { name: e.name, amount: e.amount, unit: e.unit, kcal: e.kcal };
+      return { name: exerciseName(e), amount: e.amount, unit: e.unit, kcal: e.kcal };
     });
   }
 
@@ -809,11 +815,11 @@
     if (exercises.length) {
       card.appendChild(h('div', null, exercises.map(function (e) {
         var row = h('div', { class: 'ex-row' },
-          h('span', { class: 'name' }, e.name + ' · ' + e.amount + ' ' + e.unit),
+          h('span', { class: 'name' }, exerciseName(e) + ' · ' + e.amount + ' ' + e.unit),
           h('span', { class: 'kcal' }, '~' + e.kcal + ' kcal'),
           h('button', {
             type: 'button',
-            'aria-label': 'Xóa ' + e.name,
+            'aria-label': 'Xóa ' + exerciseName(e),
             onclick: function () {
               Db.remove('exercises', e.id).then(rerenderKeepingScroll);
             }
@@ -823,7 +829,10 @@
           if (!wrap.querySelector('form')) {
             wrap.appendChild(addMoreForm(e, weight));
           }
-          wrap.querySelector('input').focus();
+          // Cursor at the end of the prefilled number, ready to edit it.
+          var input = wrap.querySelector('input');
+          input.focus();
+          input.setSelectionRange(input.value.length, input.value.length);
         });
         return wrap;
       })));
@@ -913,7 +922,7 @@
           })).then(rerenderKeepingScroll);
         }
       }, '↺ Giống buổi tập ' + dayTitle(lastDay) + ': ' + routine.map(function (e) {
-        return e.name + ' ' + e.amount + ' ' + e.unit;
+        return exerciseName(e) + ' ' + e.amount + ' ' + e.unit;
       }).join(', ')), showForm);
     });
     return card;
@@ -968,19 +977,26 @@
         kcal: ex ? exerciseKcal(ex, total, weight) : Math.round(e.kcal * total / e.amount)
       };
     }
-    var input = h('input', { type: 'number', inputmode: 'decimal', min: '0', step: 'any', placeholder: 'VD: 20' });
+    function typed() {
+      return parseFloat(input.value.replace(',', '.'));
+    }
+    // Starts with the number added last time (or the first amount logged), since sets usually repeat.
+    var input = h('input', { type: 'text', inputmode: 'decimal', placeholder: 'VD: 20' });
+    input.value = String(e.lastAdded || e.amount);
     var preview = h('p', { class: 'muted small' }, '');
-    input.addEventListener('input', function () {
-      var amount = parseFloat(input.value);
+    function update() {
+      var amount = typed();
       if (amount > 0) {
         var t = totalFor(amount);
         preview.textContent = 'Tổng: ' + e.amount + ' + ' + amount + ' = ' + t.amount + ' ' + e.unit + ', ~' + t.kcal + ' kcal';
       } else {
         preview.textContent = '';
       }
-    });
+    }
+    input.addEventListener('input', update);
+    update();
     var form = h('form', { class: 'ex-more', novalidate: true },
-      h('label', { class: 'field' }, 'Thêm số lần cho ' + e.name, input),
+      h('label', { class: 'field' }, 'Thêm số lần cho ' + exerciseName(e), input),
       preview,
       h('div', { class: 'grid-2' },
         h('button', { class: 'btn primary', type: 'submit' }, 'Cộng thêm'),
@@ -993,12 +1009,12 @@
         }, 'Hủy')));
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
-      var amount = parseFloat(input.value);
+      var amount = typed();
       if (!(amount > 0)) {
         alert('Hãy nhập số lần muốn cộng thêm.');
         return;
       }
-      Db.put('exercises', Object.assign({}, e, totalFor(amount))).then(rerenderKeepingScroll);
+      Db.put('exercises', Object.assign({}, e, totalFor(amount), { lastAdded: amount })).then(rerenderKeepingScroll);
     });
     return form;
   }
@@ -1126,6 +1142,20 @@
       return;
     }
 
+    viewEl.appendChild(h('button', {
+      class: 'btn',
+      style: 'margin-bottom:14px',
+      type: 'button',
+      onclick: function () {
+        p.result = null;
+        storePendingMeal();
+        renderAdd();
+        if (isDirect(askMode())) {
+          analyze();
+        }
+      }
+    }, 'Phân tích lại'));
+
     var r = p.result;
     if (!r.is_food) {
       viewEl.appendChild(h('div', { class: 'card' },
@@ -1185,18 +1215,6 @@
 
       viewEl.appendChild(h('button', { class: 'btn primary', type: 'button', onclick: saveMeal }, '✅ Lưu — tôi sẽ ăn bữa này'));
       viewEl.appendChild(h('div', { class: 'btn-row' },
-        h('button', {
-          class: 'btn',
-          type: 'button',
-          onclick: function () {
-            p.result = null;
-            storePendingMeal();
-            renderAdd();
-            if (isDirect(askMode())) {
-              analyze();
-            }
-          }
-        }, 'Phân tích lại'),
         h('button', {
           class: 'btn danger',
           type: 'button',
@@ -1863,7 +1881,7 @@
     });
   }
 
-  var APP_VERSION = '1.9';
+  var APP_VERSION = '1.10';
 
   function exportBackup() {
     Db.exportAll().then(function (data) {
