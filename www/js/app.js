@@ -893,7 +893,8 @@
       onclick: function () {
         form.hidden = false;
         showForm.hidden = true;
-        amountInput.focus();
+        // Pick the exercise first; the number comes after.
+        typeSelect.focus();
       }
     }, '+ Thêm bài tập');
     card.appendChild(showForm);
@@ -929,8 +930,14 @@
   }
 
   /** Calls fn when el is held for half a second without moving (a tap or a scroll doesn't count). */
+  /**
+   * Calls fn when el is held for half a second without moving (a tap or a scroll doesn't count),
+   * and again when the finger lifts: focus set from a timer doesn't bring up Android's keyboard,
+   * focus set while handling the release does.
+   */
   function onLongPress(el, fn) {
     var timer = null;
+    var held = false;
     var startX = 0;
     var startY = 0;
     function cancel() {
@@ -938,6 +945,7 @@
       timer = null;
     }
     el.addEventListener('pointerdown', function (ev) {
+      held = false;
       if (ev.target.closest('button')) {
         return;
       }
@@ -946,6 +954,7 @@
       cancel();
       timer = setTimeout(function () {
         timer = null;
+        held = true;
         if (navigator.vibrate) {
           navigator.vibrate(30);
         }
@@ -957,8 +966,24 @@
         cancel();
       }
     });
-    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (type) {
+    ['pointercancel', 'pointerleave'].forEach(function (type) {
       el.addEventListener(type, cancel);
+    });
+    el.addEventListener('pointerup', function (ev) {
+      cancel();
+      if (held && ev.pointerType === 'mouse') {
+        held = false;
+        fn();
+      }
+    });
+    el.addEventListener('touchend', function (ev) {
+      cancel();
+      if (held) {
+        held = false;
+        // No follow-up mouse events, which would move focus back to the row.
+        ev.preventDefault();
+        fn();
+      }
     });
     el.addEventListener('contextmenu', function (ev) {
       ev.preventDefault();
@@ -1881,7 +1906,7 @@
     });
   }
 
-  var APP_VERSION = '1.10';
+  var APP_VERSION = '1.11';
 
   function exportBackup() {
     Db.exportAll().then(function (data) {
