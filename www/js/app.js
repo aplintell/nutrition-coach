@@ -753,6 +753,13 @@
       } else {
         viewEl.appendChild(exerciseCard(key, exercises, profile));
         viewEl.appendChild(mealsCard(meals, false));
+        viewEl.appendChild(h('button', {
+          class: 'fab',
+          type: 'button',
+          onclick: function () {
+            location.hash = '#add/' + key;
+          }
+        }, '+ Bữa ăn'));
       }
       viewEl.appendChild(h('p', { class: 'disclaimer' }, 'Số liệu là ước tính của AI, không thay thế lời khuyên của bác sĩ.'));
     });
@@ -1105,12 +1112,31 @@
   // Add a meal: photo → Claude's estimate → save (or not)
   var pending = null;
 
+  function newPendingMeal() {
+    // time stays null until chosen: the meal then gets the time it is saved.
+    return { photo: null, note: '', result: null, portion: 1, day: dayKey(), time: null };
+  }
+
+  /** The day the meal being added belongs to (today unless another day was picked). */
+  function pendingDay(p) {
+    return p.day || dayKey();
+  }
+
+  /** Where to go once the meal is saved or dropped: Food for today, otherwise that day's screen. */
+  function afterMealHash(day) {
+    return day === dayKey() ? '#food' : '#day/' + day;
+  }
+
   function renderAdd() {
     setScreen('Thêm bữa ăn', 'food', true);
     if (!pending) {
-      pending = { photo: null, note: '', result: null, portion: 1 };
+      pending = newPendingMeal();
     }
     var p = pending;
+    var mealDay = pendingDay(p);
+    if (mealDay !== dayKey()) {
+      titleEl.textContent = 'Thêm bữa ăn · ' + dayTitle(mealDay);
+    }
 
     var photoBox = h('button', {
       class: 'photo-box',
@@ -1136,7 +1162,31 @@
     noteInput.value = p.note;
 
     viewEl.appendChild(photoBox);
-    viewEl.appendChild(h('label', { class: 'field', style: 'margin-top:12px' }, 'Ghi chú (không bắt buộc — món gì, bao nhiêu, cách nấu)', noteInput));
+    // Missed logging a meal? Pick the day (and time) it was eaten.
+    var dayInput = h('input', { type: 'date', max: dayKey() });
+    dayInput.value = mealDay;
+    dayInput.addEventListener('change', function () {
+      if (dayInput.value && dayInput.value <= dayKey()) {
+        p.day = dayInput.value;
+        storePendingMeal();
+        renderAdd();
+      } else {
+        dayInput.value = mealDay;
+      }
+    });
+    var timeInput = h('input', { type: 'time' });
+    timeInput.value = p.time || (mealDay === dayKey() ? timeLabel() : '12:00');
+    timeInput.addEventListener('change', function () {
+      p.time = timeInput.value || null;
+      storePendingMeal();
+    });
+    viewEl.appendChild(h('div', { class: 'grid-2', style: 'margin-top:12px' },
+      h('label', { class: 'field' }, 'Ngày ăn', dayInput),
+      h('label', { class: 'field' }, 'Giờ', timeInput)));
+    if (mealDay !== dayKey()) {
+      viewEl.appendChild(h('p', { class: 'muted small', style: 'margin-top:-6px' }, '📅 Bữa này sẽ được ghi vào ' + dayTitle(mealDay) + '.'));
+    }
+    viewEl.appendChild(h('label', { class: 'field' }, 'Ghi chú (không bắt buộc — món gì, bao nhiêu, cách nấu)', noteInput));
 
     if (!p.result) {
       viewEl.appendChild(askButtons('meal', '🔍 Phân tích bữa ăn', analyze, showMealResult, true));
@@ -1172,7 +1222,7 @@
     var scaled = scaleNutrients(r.nutrients, p.portion);
 
     Promise.all([
-      Db.getAllByIndex('meals', 'day', dayKey()), Db.getKv('targets'), Db.getAllByIndex('exercises', 'day', dayKey())
+      Db.getAllByIndex('meals', 'day', mealDay), Db.getKv('targets'), Db.getAllByIndex('exercises', 'day', mealDay)
     ]).then(function (res) {
       var targets = withExercise(res[1], exerciseTotal(res[2]));
       var before = sumNutrients(res[0]);
@@ -1224,17 +1274,21 @@
           type: 'button',
           onclick: function () {
             clearPendingMeal();
-            location.hash = '#food';
+            location.hash = afterMealHash(mealDay);
           }
         }, 'Bỏ')));
     });
 
     function saveMeal() {
       var now = new Date();
+      var time = p.time || (mealDay === dayKey() ? timeLabel(now) : '12:00');
+      var hm = time.split(':');
+      var dm = mealDay.split('-');
+      var eatenAt = new Date(+dm[0], +dm[1] - 1, +dm[2], +hm[0], +hm[1]);
       Db.put('meals', {
-        day: dayKey(now),
-        time: timeLabel(now),
-        createdAt: now.toISOString(),
+        day: mealDay,
+        time: time,
+        createdAt: eatenAt.toISOString(),
         name: r.meal_name,
         items: r.items,
         portion: p.portion,
@@ -1247,10 +1301,11 @@
         thumb: p.photo ? p.photo.thumb : null
       }).then(function (mealId) {
         // The full photo is kept for PHOTO_KEEP_DAYS; the thumbnail above stays for good.
+        // Kept by the day it was added, so a late-logged meal's photo isn't pruned straight away.
         return p.photo ? Db.put('photos', { mealId: mealId, day: dayKey(now), dataUrl: p.photo.preview }) : null;
       }).then(function () {
         clearPendingMeal();
-        location.hash = '#food';
+        location.hash = afterMealHash(mealDay);
       }, function (err) {
         alert('Không lưu được: ' + err.message);
       });
@@ -1275,7 +1330,7 @@
     pending.result = result;
     pending.portion = 1;
     storePendingMeal();
-    if (location.hash === '#add') {
+    if (location.hash.split('/')[0] === '#add') {
       renderAdd();
     }
   }
@@ -1287,7 +1342,8 @@
       return;
     }
     storePendingMeal();
-    Promise.all([Db.getAllByIndex('meals', 'day', dayKey()), Db.getAllByIndex('exercises', 'day', dayKey())]).then(function (today) {
+    var day = pendingDay(p);
+    Promise.all([Db.getAllByIndex('meals', 'day', day), Db.getAllByIndex('exercises', 'day', day)]).then(function (today) {
       return askClaude('meal', 'Claude đang xem bữa ăn...', function (profile, labs) {
         return {
           imageBase64: p.photo ? p.photo.base64 : null,
@@ -1296,7 +1352,7 @@
           labs: labs,
           eatenToday: roundAll(sumNutrients(today[0])),
           exercise: exerciseForAi(today[1]),
-          now: dayTitle(dayKey()) + ' ' + timeLabel()
+          now: dayTitle(day) + ' ' + (p.time || (day === dayKey() ? timeLabel() : '12:00'))
         };
       });
     }).then(function (result) {
@@ -1885,7 +1941,7 @@
     });
   }
 
-  var APP_VERSION = '1.12';
+  var APP_VERSION = '1.13';
 
   function exportBackup() {
     Db.exportAll().then(function (data) {
@@ -1951,7 +2007,14 @@
     if (screen === 'add') {
       done = (pending ? Promise.resolve() : Db.getKv('pendingMeal').then(function (stored) {
         pending = stored || null;
-      })).then(renderAdd);
+      })).then(function () {
+        // #add/<day>: a meal missed on a past day, opened from that day's screen.
+        if (/^\d{4}-\d{2}-\d{2}$/.test(parts[1] || '')) {
+          pending = pending || newPendingMeal();
+          pending.day = parts[1];
+        }
+        return renderAdd();
+      });
     } else if (screen === 'meal') {
       done = renderMeal(parseInt(parts[1], 10));
     } else if (screen === 'day') {

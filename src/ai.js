@@ -477,6 +477,24 @@ async function callJson(service, url, headers, body) {
   return { status: response.status, data, message: data.error && data.error.message || '' };
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * callJson, asked again after each wait while the service answers 5xx: free tiers often reply
+ * 503 "overloaded" at busy times, and it usually passes within seconds.
+ */
+async function callJsonRetrying(service, waits, url, headers, body) {
+  let answer = await callJson(service, url, headers, body);
+  for (const wait of waits) {
+    if (answer.status < 500) {
+      break;
+    }
+    await sleep(wait);
+    answer = await callJson(service, url, headers, body);
+  }
+  return answer;
+}
+
 function questionText(request) {
   return request.text + '\n\nReply with only the JSON object. ' + replyShape(request);
 }
@@ -491,11 +509,12 @@ function parseFreeReply(service, kind, text) {
 
 // -- Gemini (free with a Google AI Studio key) --
 
-// The "-latest" aliases follow Google's newest models; fixed names are fallbacks. Flash-Lite with
+// The "-latest" aliases follow Google's newest models; fixed names are fallbacks, also used while a
+// model is overloaded (5xx) or out of free quota (429; each model has its own). Flash-Lite with
 // minimal thinking answers several times faster; Flash thinks longer and reads photos more carefully.
 const GEMINI_MODELS = {
   fast: ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-2.5-flash-lite'],
-  careful: ['gemini-flash-latest', 'gemini-2.5-flash']
+  careful: ['gemini-flash-latest', 'gemini-2.5-flash', 'gemini-flash-lite-latest']
 };
 // Ways to ask for little thinking, newest first; older models reject the newer setting.
 const GEMINI_LOW_THINKING = [{ thinkingLevel: 'minimal' }, { thinkingLevel: 'low' }, { thinkingBudget: 0 }, null];
@@ -520,7 +539,7 @@ async function geminiGenerate(apiKey, speed, contents, systemText) {
       if (systemText) {
         body.system_instruction = { parts: [{ text: systemText }] };
       }
-      answer = await callJson('gemini', `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      answer = await callJsonRetrying('gemini', [2000], `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         { 'x-goog-api-key': apiKey }, body);
       answer.model = model;
       if (!(answer.status === 400 && /think/i.test(answer.message))) {
@@ -528,7 +547,7 @@ async function geminiGenerate(apiKey, speed, contents, systemText) {
       }
       rejectedSettings.add(model + '|' + JSON.stringify(thinking));
     }
-    if (answer.status !== 404) {
+    if (answer.status !== 404 && answer.status !== 429 && answer.status < 500) {
       break;
     }
   }
@@ -598,7 +617,7 @@ async function groqChat(apiKey, messages) {
     if (effort) {
       body.reasoning_effort = effort;
     }
-    answer = await callJson('groq', GROQ_URL + '/chat/completions', { Authorization: 'Bearer ' + apiKey }, body);
+    answer = await callJsonRetrying('groq', [1500, 4000], GROQ_URL + '/chat/completions', { Authorization: 'Bearer ' + apiKey }, body);
     if (!(answer.status === 400 && /reasoning/i.test(answer.message))) {
       break;
     }
