@@ -584,11 +584,36 @@
     ];
   }
 
-  function nutrientTable(nutrients) {
-    return h('table', { class: 'simple' },
-      h('tbody', null, NUTRIENTS.map(function (n) {
-        return h('tr', null, h('td', null, n.name), h('td', null, fmt(nutrients[n.key], n.unit) + ' ' + n.unit));
-      })));
+  // Nutrients whose rows also list which foods in the meal they come from.
+  var BREAKDOWN_KEYS = ['cholesterol_mg'];
+
+  /**
+   * Table rows for the given nutrient keys. Items are the meal's foods with their own nutrients
+   * (meals analysed before v1.14 have none), scaled by the share of the meal eaten.
+   */
+  function nutrientRows(keys, nutrients, items, portion) {
+    var rows = [];
+    keys.forEach(function (key) {
+      var n = NUTRIENT_BY_KEY[key];
+      rows.push(h('tr', null, h('td', null, n.name), h('td', null, fmtAmount(key, nutrients[key]))));
+      if (BREAKDOWN_KEYS.indexOf(key) === -1) {
+        return;
+      }
+      (items || []).filter(function (i) {
+        return i.nutrients && i.nutrients[key] * portion >= 0.5;
+      }).sort(function (a, b) {
+        return b.nutrients[key] - a.nutrients[key];
+      }).forEach(function (i) {
+        rows.push(h('tr', { class: 'sub' }, h('td', null, '↳ ' + i.name), h('td', null, fmtAmount(key, i.nutrients[key] * portion))));
+      });
+    });
+    return rows;
+  }
+
+  function nutrientTable(nutrients, items, portion) {
+    return h('table', { class: 'simple' }, h('tbody', null, nutrientRows(NUTRIENTS.map(function (n) {
+      return n.key;
+    }), nutrients, items, portion || 1)));
   }
 
   // ---- Exercise ----
@@ -1256,10 +1281,9 @@
           }, c[1]);
         })),
         h('h3', null, 'Dinh dưỡng (phần bạn ăn)'),
-        h('table', { class: 'simple' }, h('tbody', null,
-          ['energy_kcal', 'protein_g', 'carbs_g', 'sugar_g', 'fat_g', 'sat_fat_g', 'fiber_g', 'sodium_mg', 'purine_mg'].map(function (k) {
-            return h('tr', null, h('td', null, NUTRIENT_BY_KEY[k].name), h('td', null, fmtAmount(k, scaled[k])));
-          }))),
+        h('table', { class: 'simple' }, h('tbody', null, nutrientRows(
+          ['energy_kcal', 'protein_g', 'carbs_g', 'sugar_g', 'fat_g', 'sat_fat_g', 'cholesterol_mg', 'fiber_g', 'sodium_mg', 'purine_mg'],
+          scaled, r.items, p.portion))),
         h('p', null, r.comment),
         r.warnings.map(function (w) {
           return h('div', { class: 'warning' }, '⚠️ ' + w);
@@ -1388,7 +1412,7 @@
         (m.warnings || []).map(function (w) {
           return h('div', { class: 'warning' }, '⚠️ ' + w);
         })));
-      viewEl.appendChild(h('div', { class: 'card' }, h('h2', null, 'Dinh dưỡng'), nutrientTable(m.nutrients)));
+      viewEl.appendChild(h('div', { class: 'card' }, h('h2', null, 'Dinh dưỡng'), nutrientTable(m.nutrients, m.items, m.portion)));
       viewEl.appendChild(h('button', {
         class: 'btn danger',
         type: 'button',
@@ -1941,7 +1965,7 @@
     });
   }
 
-  var APP_VERSION = '1.13';
+  var APP_VERSION = '1.14';
 
   function exportBackup() {
     Db.exportAll().then(function (data) {

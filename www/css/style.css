@@ -651,3 +651,15 @@ table.simple td:last-child {
   padding: 10px 0;
   border-bottom: 1px solid var(--border);
 }
+
+/* Which food a nutrient comes from, under that nutrient's row */
+table.simple tr.sub td {
+  padding: 3px 2px 3px 14px;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  border-bottom: none;
+}
+
+table.simple tr.sub td:last-child {
+  padding-left: 2px;
+}

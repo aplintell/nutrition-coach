@@ -30,11 +30,13 @@ const NutrientRanges = z.object(Object.fromEntries(NUTRIENTS.map((n) => [n.key, 
   max: z.number().nullable()
 })])));
 
+// Nutrients are given per item and the meal total is added up here (mealTotals): adding up in the
+// model's head was the main reason different AIs gave very different totals for the same meal,
+// and per-item numbers also show which food a nutrient (e.g. cholesterol) comes from.
 const MealResult = z.object({
   is_food: z.boolean(),
   meal_name: z.string(),
-  items: z.array(z.object({ name: z.string(), portion: z.string(), grams: z.number() })),
-  nutrients: NutrientAmounts,
+  items: z.array(z.object({ name: z.string(), portion: z.string(), grams: z.number(), nutrients: NutrientAmounts })),
   confidence: z.enum(['low', 'medium', 'high']),
   comment: z.string(),
   warnings: z.array(z.string())
@@ -124,8 +126,12 @@ function mealRequest({ imageBase64, note, profile, labs, eatenToday, exercise, n
       imageBase64 ? 'The photo shows the meal the person is about to eat.' : 'There is no photo; rely on the description.',
       note ? `The person's note about the meal: "${note}"` : 'No note.',
       '',
-      'Identify each food and drink, estimate realistic portions in grams (use plates, bowls and hands in the photo for scale), and estimate the nutrients of the WHOLE meal.',
-      'If the photo is not food, set is_food to false, items to an empty list and every nutrient to 0.',
+      'The note is written by the person who is eating, so it is more reliable than the photo: when they disagree (which dish, how much, what is left uneaten), follow the note.',
+      'Work item by item:',
+      '1. List each food and drink as its own item. Count separately what adds real energy, fat, sodium or cholesterol: cooking oil or fat, sauces and dips, broth that is drunk, eggs, organ meats, skin.',
+      '2. Estimate the edible grams of each item as eaten (no bones or shells), using plates, bowls, chopsticks and hands in the photo for scale.',
+      '3. For each item, take its nutrients per 100 g from food-composition data and multiply by grams / 100. Put those numbers in the nutrients of that item. The app adds the items up for the meal total, so do not give a total.',
+      'If the photo is not food, set is_food to false and items to an empty list.',
       'meal_name: a short Vietnamese name for the meal. confidence: how sure you are about the portions.',
       'comment: 1-3 sentences on how this meal fits this person today (considering their profile, labs and what they already ate).',
       'warnings: specific concerns for this person (e.g. high purine with high uric acid); empty list if none.'
@@ -133,14 +139,23 @@ function mealRequest({ imageBase64, note, profile, labs, eatenToday, exercise, n
     template: {
       is_food: true,
       meal_name: '...',
-      items: [{ name: '...', portion: '...', grams: 0 }],
-      nutrients: ZERO_NUTRIENTS,
+      items: [{ name: '...', portion: '...', grams: 0, nutrients: ZERO_NUTRIENTS }],
       confidence: 'medium',
       comment: '...',
       warnings: ['...']
     },
-    hints: 'confidence is one of: low, medium, high.'
+    hints: 'confidence is one of: low, medium, high. Every item has its own nutrients object with every key.'
   };
+}
+
+/** The meal total: the items added up (a reply in the old shape keeps the total it gave). */
+function mealTotals(result) {
+  const hasItemNutrients = result.items.some((i) => i.nutrients && Object.values(i.nutrients).some((v) => v > 0));
+  if (hasItemNutrients || !result.nutrients) {
+    result.nutrients = Object.fromEntries(NUTRIENTS.map((n) => [n.key,
+      Math.round(result.items.reduce((sum, i) => sum + (i.nutrients ? i.nutrients[n.key] : 0), 0) * 100) / 100]));
+  }
+  return result;
 }
 
 function targetsRequest({ profile, labs, today }) {
@@ -302,7 +317,7 @@ async function ask(apiKey, request) {
 
 /** Estimates what's in a meal photo (and/or a typed description) before it's eaten. */
 export function analyzeMeal(args) {
-  return ask(args.apiKey, mealRequest(args));
+  return ask(args.apiKey, mealRequest(args)).then((answer) => Object.assign(answer, { result: mealTotals(answer.result) }));
 }
 
 /** Personal daily targets (min / max per nutrient) from the profile and lab results. */
@@ -389,8 +404,16 @@ function oneOf(value, patterns, fallback) {
 // nutrient) before checking the reply against the schema.
 const TIDY = {
   meal(d) {
-    d.nutrients = Object.fromEntries(NUTRIENTS.map((n) => [n.key, toNumber(d.nutrients && d.nutrients[n.key], 0)]));
-    d.items = (d.items || []).map((i) => Object.assign({}, i, { grams: toNumber(i.grams, 0) }));
+    const amounts = (x) => Object.fromEntries(NUTRIENTS.map((n) => [n.key, toNumber(x && x[n.key], 0)]));
+    if (d.nutrients) {
+      d.nutrients = amounts(d.nutrients);
+    }
+    d.items = (d.items || []).map((i) => Object.assign({}, i, {
+      name: String(i.name || ''),
+      portion: String(i.portion || ''),
+      grams: toNumber(i.grams, 0),
+      nutrients: amounts(i.nutrients)
+    }));
     d.warnings = d.warnings || [];
     d.comment = d.comment || '';
     if (d.is_food === undefined) {
@@ -435,7 +458,8 @@ export function parseManualReply(kind, reply) {
   if (!checked.success) {
     throw new AiError('Câu trả lời của Claude không đúng mẫu. Hãy nhắn Claude "trả lời lại đúng mẫu JSON" rồi sao chép và dán lại.');
   }
-  return checked.data;
+  // zod drops keys the schema doesn't name; an old-shape total is kept for mealTotals.
+  return kind === 'meal' ? mealTotals(Object.assign(checked.data, data.nutrients ? { nutrients: data.nutrients } : {})) : checked.data;
 }
 
 // ---- Free AI services: Gemini and Groq ----
