@@ -371,19 +371,78 @@ function replyShape(request) {
   ].join('\n');
 }
 
+/** The end of the {...} object that starts at `start` (string-aware), or -1 if it never closes. */
+function objectEnd(text, start) {
+  let depth = 0;
+  let inString = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (c === '\\') {
+        i++;
+      } else if (c === '"') {
+        inString = false;
+      }
+    } else if (c === '"') {
+      inString = true;
+    } else if (c === '{') {
+      depth++;
+    } else if (c === '}' && --depth === 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+// Common slips in hand-written or small-model JSON: curly quotes, // comments, trailing commas.
+function looseJson(text) {
+  return text
+    .replace(/[“”]/g, '"')
+    .replace(/^\s*\/\/.*$/gm, '')
+    .replace(/,\s*([}\]])/g, '$1');
+}
+
+/**
+ * The reply's JSON object. Models sometimes write text (or a copy of the template) around it, so
+ * every complete {...} is tried, as written and then with common slips fixed; the largest that
+ * parses wins.
+ */
 function extractJson(reply) {
-  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(reply);
-  const body = fenced ? fenced[1] : reply;
-  const start = body.indexOf('{');
-  const end = body.lastIndexOf('}');
-  if (start === -1 || end <= start) {
-    throw new AiError('Không thấy kết quả JSON trong nội dung đã dán. Hãy sao chép toàn bộ câu trả lời của Claude rồi dán lại.');
+  const text = reply.replace(/```(?:json)?/gi, ' ');
+  let best = null;
+  let bestLength = 0;
+  let unclosed = false;
+  for (let start = text.indexOf('{'); start !== -1; start = text.indexOf('{', start + 1)) {
+    const end = objectEnd(text, start);
+    if (end === -1) {
+      unclosed = true;
+      break;
+    }
+    const slice = text.slice(start, end + 1);
+    if (slice.length > bestLength) {
+      for (const candidate of [slice, looseJson(slice)]) {
+        try {
+          const parsed = JSON.parse(candidate);
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            best = parsed;
+            bestLength = slice.length;
+            break;
+          }
+        } catch (e) {
+          // Not this one; keep looking.
+        }
+      }
+    }
+    if (best && bestLength === slice.length) {
+      start = end;
+    }
   }
-  try {
-    return JSON.parse(body.slice(start, end + 1));
-  } catch (e) {
-    throw new AiError('Nội dung đã dán bị thiếu hoặc lỗi (có thể chưa sao chép hết). Hãy sao chép lại toàn bộ câu trả lời.');
+  if (best) {
+    return best;
   }
+  throw new AiError(unclosed
+    ? 'Nội dung đã dán bị thiếu hoặc lỗi (có thể chưa sao chép hết). Hãy sao chép lại toàn bộ câu trả lời.'
+    : 'Không thấy kết quả JSON trong nội dung đã dán. Hãy sao chép toàn bộ câu trả lời của Claude rồi dán lại.');
 }
 
 function toNumber(v, fallback) {
@@ -408,15 +467,18 @@ const TIDY = {
     if (d.nutrients) {
       d.nutrients = amounts(d.nutrients);
     }
-    d.items = (d.items || []).map((i) => Object.assign({}, i, {
+    d.items = (Array.isArray(d.items) ? d.items : []).filter((i) => i && typeof i === 'object').map((i) => Object.assign({}, i, {
       name: String(i.name || ''),
       portion: String(i.portion || ''),
       grams: toNumber(i.grams, 0),
       nutrients: amounts(i.nutrients)
     }));
-    d.warnings = d.warnings || [];
-    d.comment = d.comment || '';
-    if (d.is_food === undefined) {
+    d.warnings = [].concat(d.warnings || []).map((w) => (typeof w === 'string' ? w : w && (w.text || w.message || w.warning) || JSON.stringify(w)));
+    d.comment = String(d.comment || '');
+    d.meal_name = String(d.meal_name || d.items.map((i) => i.name).join(', ') || 'Bữa ăn');
+    if (typeof d.is_food === 'string') {
+      d.is_food = !/^(false|no|không)$/i.test(d.is_food.trim());
+    } else if (d.is_food === undefined || d.is_food === null) {
       d.is_food = d.items.length > 0;
     }
     d.confidence = oneOf(d.confidence, { low: /low|thấp/i, high: /high|cao/i }, 'medium');
@@ -525,11 +587,12 @@ function questionText(request) {
   return request.text + '\n\nReply with only the JSON object. ' + replyShape(request);
 }
 
-function parseFreeReply(service, kind, text) {
+function parseFreeReply(service, kind, text, model) {
   try {
     return parseManualReply(kind, text.replace(/<think>[\s\S]*?<\/think>/g, ''));
   } catch (err) {
-    throw new AiError(`Câu trả lời của ${FREE_NAMES[service]} bị lỗi định dạng. Thử lại.`);
+    // Naming the model helps tell a one-off slip from a model that never answers in the right shape.
+    throw new AiError(`Câu trả lời của ${FREE_NAMES[service]}${model ? ' (' + model + ')' : ''} bị lỗi định dạng. Thử lại.`);
   }
 }
 
@@ -646,13 +709,22 @@ async function openRouterModels(apiKey) {
     return /:free$/.test(m.id) && +price.prompt === 0 && +price.completion === 0
       && (arch.input_modalities || []).includes('image') && (arch.output_modalities || ['text']).join() === 'text'
       && !/safety|guard/i.test(m.id);
-  }).map((m) => m.id);
+  });
   if (!free.length) {
     throw new AiError('OpenRouter hiện không có model miễn phí nào đọc được ảnh. Hãy dùng Gemini hoặc Groq.');
   }
-  const preferred = OPENROUTER_PREFERRED.filter((id) => free.includes(id));
-  return preferred.concat(free.filter((id) => !preferred.includes(id))).slice(0, OPENROUTER_MAX_TRIES);
+  free.forEach((m) => {
+    if ((m.supported_parameters || []).includes('response_format')) {
+      openRouterJsonModels.add(m.id);
+    }
+  });
+  // Models with a JSON mode answer in the right shape far more reliably, so they go first.
+  const rank = (id) => (openRouterJsonModels.has(id) ? 0 : 2) + (OPENROUTER_PREFERRED.includes(id) ? 0 : 1);
+  return free.map((m) => m.id).sort((a, b) => rank(a) - rank(b)
+    || OPENROUTER_PREFERRED.indexOf(a) - OPENROUTER_PREFERRED.indexOf(b)).slice(0, OPENROUTER_MAX_TRIES);
 }
+
+const openRouterJsonModels = new Set();
 
 const CHAT_SERVICES = {
   groq: {
@@ -667,8 +739,12 @@ const CHAT_SERVICES = {
     url: 'https://openrouter.ai/api/v1',
     maxImages: 5,
     models: openRouterModels,
-    // Not every free model supports JSON mode; the reply's JSON is found in the text anyway.
-    jsonMode: false,
+    // JSON mode only where the model has it; otherwise the JSON is found in the reply's text.
+    jsonMode: (model) => openRouterJsonModels.has(model),
+    // Most free models think before answering, and the thinking counts toward max_tokens: keep
+    // it short and leave room, or the JSON gets cut off.
+    maxTokens: 16000,
+    extraBody: { reasoning: { effort: 'low', exclude: true } },
     headers: { 'X-Title': 'Dinh Duong Cua Toi' }
   },
   mistral: {
@@ -697,43 +773,66 @@ async function serviceModels(service, apiKey) {
   return modelsByKey[cacheKey];
 }
 
-async function chatAsk(service, apiKey, messages) {
+/** One model's answer: { text, model }, or an AiError saying why there is no usable text. */
+async function chatOnce(service, apiKey, messages, model) {
   const cfg = CHAT_SERVICES[service];
-  const models = await serviceModels(service, apiKey);
   let answer;
-  let model;
-  for (model of models) {
-    for (const effort of accepted(model, cfg.efforts || [null])) {
-      const body = { model, messages, temperature: 0.3 };
-      body[cfg.maxTokensField || 'max_tokens'] = 8000;
-      if (cfg.jsonMode !== false) {
-        body.response_format = { type: 'json_object' };
-      }
-      if (effort) {
-        body.reasoning_effort = effort;
-      }
-      answer = await callJsonRetrying(service, [1500, 4000], cfg.url + (cfg.chatPath || '/chat/completions'),
-        Object.assign({ Authorization: 'Bearer ' + apiKey }, cfg.headers), body);
-      if (!(answer.status === 400 && /reasoning/i.test(answer.message))) {
-        break;
-      }
-      rejectedSettings.add(model + '|' + JSON.stringify(effort));
+  for (const effort of accepted(model, cfg.efforts || [null])) {
+    const body = Object.assign({ model, messages, temperature: 0.3 }, cfg.extraBody);
+    body[cfg.maxTokensField || 'max_tokens'] = cfg.maxTokens || 8000;
+    if (typeof cfg.jsonMode === 'function' ? cfg.jsonMode(model) : cfg.jsonMode !== false) {
+      body.response_format = { type: 'json_object' };
     }
-    // Missing, busy or out of free quota: try the next model, if there is one.
-    if (answer.status !== 404 && answer.status !== 429 && answer.status < 500) {
+    if (effort) {
+      body.reasoning_effort = effort;
+    }
+    answer = await callJsonRetrying(service, [1500, 4000], cfg.url + (cfg.chatPath || '/chat/completions'),
+      Object.assign({ Authorization: 'Bearer ' + apiKey }, cfg.headers), body);
+    if (!(answer.status === 400 && /reasoning/i.test(answer.message))) {
       break;
     }
+    rejectedSettings.add(model + '|' + JSON.stringify(effort));
   }
   if (answer.status !== 200) {
-    throw freeError(service, answer.status, answer.message);
+    const err = freeError(service, answer.status, answer.message);
+    err.status = answer.status;
+    return err;
   }
-  const text = cfg.replyText
-    ? cfg.replyText(answer.data)
-    : (((answer.data.choices || [])[0] || {}).message || {}).content;
+  const choice = (answer.data.choices || [])[0] || {};
+  const text = cfg.replyText ? cfg.replyText(answer.data) : (choice.message || {}).content;
+  if (choice.finish_reason === 'length') {
+    return new AiError(`Câu trả lời của ${FREE_NAMES[service]} bị cắt ngắn. Thử lại.`);
+  }
   if (!text) {
-    throw new AiError(`${FREE_NAMES[service]} không trả lời yêu cầu này. Thử lại.`);
+    return new AiError(`${FREE_NAMES[service]} không trả lời yêu cầu này. Thử lại.`);
   }
   return { text, model: answer.data.model || model };
+}
+
+/**
+ * Asks the service's models in turn until one gives an answer that `read` accepts (by default any
+ * text). A model that is missing, busy, out of free quota, cut off, or answers in a shape that
+ * can't be read hands over to the next one; a wrong key or a refused request stops at once.
+ */
+async function chatAsk(service, apiKey, messages, read) {
+  const models = await serviceModels(service, apiKey);
+  let lastError;
+  for (const model of models) {
+    const answer = await chatOnce(service, apiKey, messages, model);
+    if (answer instanceof AiError) {
+      lastError = answer;
+      if (answer.status && answer.status !== 404 && answer.status !== 429 && answer.status < 500) {
+        throw answer;
+      }
+      continue;
+    }
+    try {
+      return { result: read ? read(answer.text, answer.model) : answer.text, model: answer.model };
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError;
 }
 
 function chatMessages(request) {
@@ -765,8 +864,9 @@ async function askChatService(service, kind, args) {
     }
     return { tests };
   }
-  const { text } = await chatAsk(service, args.apiKey, chatMessages(BUILDERS[kind](args)));
-  return parseFreeReply(service, kind, text);
+  const { result } = await chatAsk(service, args.apiKey, chatMessages(BUILDERS[kind](args)),
+    (text, model) => parseFreeReply(service, kind, text, model));
+  return result;
 }
 
 /**

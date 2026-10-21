@@ -1994,7 +1994,7 @@
     });
   }
 
-  var APP_VERSION = '1.15';
+  var APP_VERSION = '1.16';
 
   function exportBackup() {
     Db.exportAll().then(function (data) {
