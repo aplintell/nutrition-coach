@@ -20,6 +20,8 @@
   var cap = window.Capacitor;
   var plugins = cap && cap.Plugins ? cap.Plugins : {};
   var isNative = !!(cap && cap.isNativePlatform && cap.isNativePlatform());
+  // Where the data is kept, in the words shown to the user: the APK or the web version.
+  var ON_DEVICE = isNative ? 'trên điện thoại này' : 'trong trình duyệt này';
 
   // ---- Small helpers ----
 
@@ -298,10 +300,45 @@
         }
       });
     }
-    // Browser (testing): the question is on the clipboard; photos would be attached by hand.
-    return copied.then(function () {
-      alert('Đã sao chép câu hỏi. Mở Claude, dán câu hỏi' + (request.images.length ? ' và đính kèm ' + request.images.length + ' ảnh' : '') + ', rồi gửi.');
+    // Web version on a phone: the browser's share sheet can hand question and photos to the Claude app.
+    var files = request.images.map(function (base64, i) {
+      var bytes = atob(base64);
+      var data = new Uint8Array(bytes.length);
+      for (var j = 0; j < bytes.length; j++) {
+        data[j] = bytes.charCodeAt(j);
+      }
+      return new File([data], 'gui-claude-' + (i + 1) + '.jpg', { type: 'image/jpeg' });
     });
+    var shareData = files.length ? { title: 'Hỏi Claude', text: request.text, files: files } : { title: 'Hỏi Claude', text: request.text };
+    var onPhone = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    if (onPhone && navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
+      return copied.then(function () {
+        return navigator.share(shareData);
+      }).catch(function (err) {
+        if (!err || err.name !== 'AbortError') {
+          throw new Error('Không mở được chia sẻ: ' + (err && err.message ? err.message : err));
+        }
+      });
+    }
+    // Computer browser: the question is on the clipboard and the photos are downloaded, ready to
+    // attach in claude.ai.
+    return copied.then(function () {
+      files.forEach(downloadFile);
+      alert('Đã sao chép câu hỏi' + (files.length ? ' và tải về ' + files.length + ' ảnh (thư mục Tải xuống)' : '')
+        + '. Mở claude.ai, dán câu hỏi' + (files.length ? ', đính kèm ảnh vừa tải' : '') + ' rồi gửi.');
+    });
+  }
+
+  /** Saves a File to the browser's downloads (web version). */
+  function downloadFile(file) {
+    var url = URL.createObjectURL(file);
+    var a = h('a', { href: url, download: file.name });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () {
+      URL.revokeObjectURL(url);
+    }, 1000);
   }
 
   function writeClipboard(text) {
@@ -1913,25 +1950,25 @@
       }
 
       viewEl.appendChild(freeKeyCard('gemini', 'AIza...', [
-        'Vào aistudio.google.com/apikey → đăng nhập Google → "Create API key" → sao chép rồi dán vào đây. Miễn phí, không cần thẻ. Key chỉ lưu trên điện thoại này.',
+        'Vào aistudio.google.com/apikey → đăng nhập Google → "Create API key" → sao chép rồi dán vào đây. Miễn phí, không cần thẻ. Key chỉ lưu ' + ON_DEVICE + '.',
         'Lưu ý: với gói miễn phí, Google có thể dùng dữ liệu gửi lên (ảnh, hồ sơ, xét nghiệm) để cải thiện sản phẩm của họ.'
       ], h('div', null,
         speedChoice('fast', 'Nhanh (Flash-Lite)', 'Trả lời nhanh hơn nhiều lần, đủ tốt cho bữa ăn hằng ngày.'),
         speedChoice('careful', 'Kỹ hơn (Flash)', 'Chậm hơn nhưng đọc ảnh kỹ hơn — dùng khi đọc phiếu xét nghiệm khó.'))));
 
       viewEl.appendChild(freeKeyCard('groq', 'gsk_...', [
-        'Vào console.groq.com → đăng nhập (Google hoặc email) → API Keys → "Create API Key" → sao chép rồi dán vào đây. Miễn phí, không cần thẻ. Key chỉ lưu trên điện thoại này.',
+        'Vào console.groq.com → đăng nhập (Google hoặc email) → API Keys → "Create API Key" → sao chép rồi dán vào đây. Miễn phí, không cần thẻ. Key chỉ lưu ' + ON_DEVICE + '.',
         'Groq đọc tối đa 5 ảnh mỗi lần; khi đọc nhiều ảnh xét nghiệm, app tự chia thành nhiều lần.'
       ]));
 
       viewEl.appendChild(freeKeyCard('openrouter', 'sk-or-...', [
-        'Vào openrouter.ai → đăng nhập (Google, GitHub hoặc email) → Keys → "Create API Key" → sao chép rồi dán vào đây. Miễn phí, không cần thẻ. Key chỉ lưu trên điện thoại này.',
+        'Vào openrouter.ai → đăng nhập (Google, GitHub hoặc email) → Keys → "Create API Key" → sao chép rồi dán vào đây. Miễn phí, không cần thẻ. Key chỉ lưu ' + ON_DEVICE + '.',
         'App chỉ dùng model có đuôi ":free" (không bao giờ tốn tiền) và tự chuyển sang model miễn phí khác khi một model bận. Giới hạn khoảng 50 lần mỗi ngày (1.000 lần nếu tài khoản từng nạp từ 10 USD).',
         'Lưu ý: nhà cung cấp model miễn phí có thể lưu và dùng dữ liệu gửi lên.'
       ]));
 
       viewEl.appendChild(freeKeyCard('cohere', 'Cohere API key', [
-        'Vào dashboard.cohere.com → đăng ký → API Keys → sao chép "Trial key" rồi dán vào đây. Miễn phí, không cần thẻ. Key chỉ lưu trên điện thoại này.',
+        'Vào dashboard.cohere.com → đăng ký → API Keys → sao chép "Trial key" rồi dán vào đây. Miễn phí, không cần thẻ. Key chỉ lưu ' + ON_DEVICE + '.',
         'Key dùng thử có khoảng 1.000 lần hỏi mỗi tháng và chỉ dành cho việc dùng cá nhân.'
       ]));
 
@@ -1939,7 +1976,7 @@
       keyInput.value = s.apiKey || '';
       viewEl.appendChild(h('div', { class: 'card', hidden: mode !== 'api' },
         h('h2', null, '🔑 Claude API key'),
-        h('p', { class: 'muted small' }, 'Tạo key tại console.anthropic.com → API Keys, rồi dán vào đây. Key chỉ lưu trên điện thoại này.'),
+        h('p', { class: 'muted small' }, 'Tạo key tại console.anthropic.com → API Keys, rồi dán vào đây. Key chỉ lưu ' + ON_DEVICE + '.'),
         h('label', { class: 'field' }, 'API key', keyInput),
         h('button', {
           class: 'link-btn',
@@ -1964,9 +2001,16 @@
         h('p', null, 'Khoảng $' + (s.totalCostUsd || 0).toFixed(2) + ' cho ' + (s.requestCount || 0) + ' lần hỏi Claude.'),
         h('p', { class: 'muted small' }, 'Ước tính theo giá Claude Opus 5.5; số chính xác xem ở console.anthropic.com. Mỗi bữa ăn thường tốn vài cent.')));
 
+      var storageInfo = h('p', { class: 'muted small' }, '');
+      if (!isNative) {
+        showStorageInfo(storageInfo);
+      }
       viewEl.appendChild(h('div', { class: 'card' },
         h('h2', null, '💾 Sao lưu'),
-        h('p', { class: 'muted small' }, 'Dữ liệu chỉ nằm trên điện thoại này và sẽ mất nếu gỡ ứng dụng. Hãy sao lưu thường xuyên (gửi file qua Zalo/Drive/email cho chính mình).'),
+        h('p', { class: 'muted small' }, isNative
+          ? 'Dữ liệu chỉ nằm trên điện thoại này và sẽ mất nếu gỡ ứng dụng. Hãy sao lưu thường xuyên (gửi file qua Zalo/Drive/email cho chính mình).'
+          : 'Dữ liệu (hồ sơ, xét nghiệm máu/nước tiểu, bữa ăn, bài tập, API key) chỉ nằm trong trình duyệt này, trên máy này — không gửi lên máy chủ nào. Dữ liệu sẽ mất nếu xóa dữ liệu duyệt web của trang này, và không có khi mở bằng trình duyệt hoặc máy khác, hay ở chế độ ẩn danh. Hãy sao lưu thường xuyên; dùng file sao lưu để chuyển dữ liệu sang máy khác.'),
+        isNative ? null : storageInfo,
         h('button', { class: 'btn', type: 'button', onclick: exportBackup }, '⬆️ Xuất file sao lưu'),
         h('button', {
           class: 'btn',
@@ -1980,7 +2024,10 @@
       viewEl.appendChild(h('div', { class: 'card' },
         h('img', { class: 'about-logo', src: 'img/logo.png', alt: 'Logo' }),
         h('h2', null, 'ℹ️ Về ứng dụng'),
-        h('p', { class: 'muted small' }, 'Ảnh bữa ăn, hồ sơ và kết quả xét nghiệm được gửi tới Anthropic (Claude), Google (Gemini), Groq, OpenRouter hoặc Cohere, tùy cách hỏi đã chọn, để phân tích mỗi khi bạn bấm phân tích; ngoài ra mọi dữ liệu chỉ lưu trên điện thoại.'),
+        h('p', { class: 'muted small' }, 'Ảnh bữa ăn, hồ sơ và kết quả xét nghiệm được gửi tới Anthropic (Claude), Google (Gemini), Groq, OpenRouter hoặc Cohere, tùy cách hỏi đã chọn, để phân tích mỗi khi bạn bấm phân tích; ngoài ra mọi dữ liệu chỉ lưu ' + (isNative ? 'trên điện thoại.' : 'trong trình duyệt này.')),
+        isNative ? null : h('p', { class: 'muted small' }, 'Có bản ứng dụng Android: ',
+          h('a', { href: 'https://github.com/aplintell/nutrition-coach/releases/latest/download/nutrition-coach.apk' }, 'tải file APK'),
+          ' (dữ liệu hai bản không tự đồng bộ — chuyển bằng file sao lưu).'),
         h('p', { class: 'muted small' }, 'Mỗi lần hỏi Claude chỉ gửi dữ liệu của hôm nay (ảnh bữa đang ăn, các bữa trong ngày); các ngày trước không được gửi.'),
         h('p', { class: 'muted small' }, 'Ảnh gốc của bữa ăn được giữ ' + PHOTO_KEEP_DAYS + ' ngày rồi tự xóa; ảnh nhỏ trong lịch sử được giữ mãi. File sao lưu không gồm ảnh gốc.'),
         h('p', { class: 'muted small' }, 'Số liệu dinh dưỡng là ước tính của AI và có thể sai. Ứng dụng không thay thế bác sĩ hoặc chuyên gia dinh dưỡng.'),
@@ -1988,7 +2035,24 @@
     });
   }
 
-  var APP_VERSION = '1.17';
+  var APP_VERSION = '1.18';
+
+  /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
+  function showStorageInfo(el) {
+    if (!navigator.storage || !navigator.storage.estimate) {
+      return;
+    }
+    Promise.all([
+      navigator.storage.estimate(),
+      navigator.storage.persisted ? navigator.storage.persisted() : Promise.resolve(false)
+    ]).then(function (r) {
+      var mb = (r[0].usage || 0) / 1024 / 1024;
+      el.textContent = '📦 Đang dùng ' + (mb < 0.1 ? '< 0,1' : mb.toFixed(1).replace('.', ',')) + ' MB trong trình duyệt. '
+        + (r[1]
+          ? 'Trình duyệt đã đồng ý giữ dữ liệu lâu dài.'
+          : 'Trình duyệt chưa hứa giữ lâu dài (có thể tự xóa khi máy hết chỗ) — thêm trang vào màn hình chính hoặc đánh dấu trang để được giữ, và nhớ sao lưu.');
+    }).catch(function () {});
+  }
 
   function exportBackup() {
     Db.exportAll().then(function (data) {
@@ -2005,14 +2069,7 @@
             }
           });
       }
-      var url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-      var a = h('a', { href: url, download: fileName });
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(function () {
-        URL.revokeObjectURL(url);
-      }, 1000);
+      downloadFile(new File([text], fileName, { type: 'application/json' }));
     });
   }
 
@@ -2115,6 +2172,12 @@
   var keepFrom = new Date();
   keepFrom.setDate(keepFrom.getDate() - (PHOTO_KEEP_DAYS - 1));
   Db.prunePhotosBefore(dayKey(keepFrom)).catch(function () {});
+
+  // Web version: everything lives in this browser's storage (IndexedDB). Ask the browser to keep it
+  // ("persistent"), so it isn't cleared on its own when the device runs low on space.
+  if (!isNative && navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().catch(function () {});
+  }
 
   loadSettings().then(route, route);
 })();

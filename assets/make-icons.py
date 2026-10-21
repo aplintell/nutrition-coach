@@ -49,4 +49,8 @@ for folder in os.listdir(res):
 os.makedirs(os.path.join(root, 'www/img'), exist_ok=True)
 logo.save(os.path.join(root, 'www/img/logo.png'))
 placed(192, art, 0.86).save(os.path.join(root, 'www/img/icon-192.png'))
+# Web version installed to the home screen: iPhone icon, and a 512px icon whose art sits inside
+# the safe circle so Android can crop it to any shape ("maskable").
+placed(180, art, 0.86).convert('RGB').save(os.path.join(root, 'www/img/apple-touch-icon.png'))
+placed(512, art, 0.62).save(os.path.join(root, 'www/img/icon-512.png'))
 print('done')

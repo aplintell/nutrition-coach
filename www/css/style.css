@@ -663,3 +663,8 @@ table.simple tr.sub td {
 table.simple tr.sub td:last-child {
   padding-left: 2px;
 }
+
+/* Links inside text (e.g. the APK download on the web version) */
+.card p a {
+  color: var(--accent);
+}
