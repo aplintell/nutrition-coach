@@ -167,12 +167,14 @@
   /**
    * How the AI is asked: 'app' shares the question to the Claude app (free with a Claude Pro
    * plan) and the user pastes the reply back; 'api' calls the Claude API with the user's key
-   * (paid); 'gemini', 'groq', 'openrouter', 'mistral' and 'cohere' call that free service with
+   * (paid); 'gemini', 'groq', 'openrouter' and 'cohere' call that free service with
    * the user's own free key.
    */
   function askMode(settings) {
     settings = settings || settingsCache;
-    return settings.mode || (settings.apiKey ? 'api' : 'app');
+    // A service that has since been removed from the app (e.g. Mistral) counts as not chosen.
+    var known = settings.mode === 'app' || settings.mode === 'api' || !!FREE_SERVICES[settings.mode];
+    return known ? settings.mode : (settings.apiKey ? 'api' : 'app');
   }
 
   // The free services: settings key field and the name shown while waiting.
@@ -180,7 +182,6 @@
     gemini: { key: 'geminiKey', name: 'Gemini' },
     groq: { key: 'groqKey', name: 'Groq' },
     openrouter: { key: 'openrouterKey', name: 'OpenRouter' },
-    mistral: { key: 'mistralKey', name: 'Mistral' },
     cohere: { key: 'cohereKey', name: 'Cohere' }
   };
 
@@ -1849,8 +1850,6 @@
           'Một chạm, trả lời thường chỉ vài giây. Cần Groq API key miễn phí từ console.groq.com. Đọc ảnh món ăn có thể kém chính xác hơn Gemini.'),
         modeChoice('openrouter', 'OpenRouter (miễn phí)',
           'Một chạm. Dùng các model miễn phí đọc được ảnh (Gemma, Nemotron...), app tự chọn. Key miễn phí từ openrouter.ai; khoảng 50 lần mỗi ngày.'),
-        modeChoice('mistral', 'Mistral (miễn phí)',
-          'Một chạm. Model Mistral Small đọc được ảnh. Key miễn phí từ console.mistral.ai (cần xác minh số điện thoại).'),
         modeChoice('cohere', 'Cohere (miễn phí, 1.000 lần/tháng)',
           'Một chạm. Model Command A Vision. Key dùng thử miễn phí từ dashboard.cohere.com, khoảng 1.000 lần mỗi tháng.'),
         modeChoice('api', 'Claude API key (trả phí theo lần dùng)',
@@ -1931,11 +1930,6 @@
         'Lưu ý: nhà cung cấp model miễn phí có thể lưu và dùng dữ liệu gửi lên.'
       ]));
 
-      viewEl.appendChild(freeKeyCard('mistral', 'Mistral API key', [
-        'Vào console.mistral.ai → đăng ký → chọn gói "Experiment" (miễn phí, cần xác minh số điện thoại) → API Keys → "Create new key" → sao chép rồi dán vào đây. Key chỉ lưu trên điện thoại này.',
-        'Lưu ý: với gói miễn phí, Mistral có thể dùng dữ liệu gửi lên để huấn luyện model.'
-      ]));
-
       viewEl.appendChild(freeKeyCard('cohere', 'Cohere API key', [
         'Vào dashboard.cohere.com → đăng ký → API Keys → sao chép "Trial key" rồi dán vào đây. Miễn phí, không cần thẻ. Key chỉ lưu trên điện thoại này.',
         'Key dùng thử có khoảng 1.000 lần hỏi mỗi tháng và chỉ dành cho việc dùng cá nhân.'
@@ -1986,7 +1980,7 @@
       viewEl.appendChild(h('div', { class: 'card' },
         h('img', { class: 'about-logo', src: 'img/logo.png', alt: 'Logo' }),
         h('h2', null, 'ℹ️ Về ứng dụng'),
-        h('p', { class: 'muted small' }, 'Ảnh bữa ăn, hồ sơ và kết quả xét nghiệm được gửi tới Anthropic (Claude), Google (Gemini), Groq, OpenRouter, Mistral hoặc Cohere, tùy cách hỏi đã chọn, để phân tích mỗi khi bạn bấm phân tích; ngoài ra mọi dữ liệu chỉ lưu trên điện thoại.'),
+        h('p', { class: 'muted small' }, 'Ảnh bữa ăn, hồ sơ và kết quả xét nghiệm được gửi tới Anthropic (Claude), Google (Gemini), Groq, OpenRouter hoặc Cohere, tùy cách hỏi đã chọn, để phân tích mỗi khi bạn bấm phân tích; ngoài ra mọi dữ liệu chỉ lưu trên điện thoại.'),
         h('p', { class: 'muted small' }, 'Mỗi lần hỏi Claude chỉ gửi dữ liệu của hôm nay (ảnh bữa đang ăn, các bữa trong ngày); các ngày trước không được gửi.'),
         h('p', { class: 'muted small' }, 'Ảnh gốc của bữa ăn được giữ ' + PHOTO_KEEP_DAYS + ' ngày rồi tự xóa; ảnh nhỏ trong lịch sử được giữ mãi. File sao lưu không gồm ảnh gốc.'),
         h('p', { class: 'muted small' }, 'Số liệu dinh dưỡng là ước tính của AI và có thể sai. Ứng dụng không thay thế bác sĩ hoặc chuyên gia dinh dưỡng.'),
@@ -1994,7 +1988,7 @@
     });
   }
 
-  var APP_VERSION = '1.16';
+  var APP_VERSION = '1.17';
 
   function exportBackup() {
     Db.exportAll().then(function (data) {

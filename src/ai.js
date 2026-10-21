@@ -524,12 +524,12 @@ export function parseManualReply(kind, reply) {
   return kind === 'meal' ? mealTotals(Object.assign(checked.data, data.nutrients ? { nutrients: data.nutrients } : {})) : checked.data;
 }
 
-// ---- Free AI services: Gemini, Groq, OpenRouter, Mistral, Cohere ----
+// ---- Free AI services: Gemini, Groq, OpenRouter, Cohere ----
 //
 // Both get the same question as the Claude app and their JSON replies go through the same
 // checks (parseManualReply), so results have the same shape as in the other modes.
 
-const FREE_NAMES = { gemini: 'Gemini', groq: 'Groq', openrouter: 'OpenRouter', mistral: 'Mistral', cohere: 'Cohere' };
+const FREE_NAMES = { gemini: 'Gemini', groq: 'Groq', openrouter: 'OpenRouter', cohere: 'Cohere' };
 
 function freeError(service, status, message) {
   const name = FREE_NAMES[service];
@@ -668,7 +668,8 @@ async function askGemini(kind, args) {
   return parseFreeReply('gemini', kind, text);
 }
 
-// -- Chat-style services: Groq, OpenRouter, Mistral, Cohere --
+// -- Chat-style services: Groq, OpenRouter, Cohere --
+// (Mistral was dropped in v1.17: since October 2026 new free accounts can't activate API keys.)
 //
 // All four take OpenAI-style chat messages (text plus base64 data-URL images) and differ only in
 // address, model choice and a few details, described in CHAT_SERVICES.
@@ -746,11 +747,6 @@ const CHAT_SERVICES = {
     maxTokens: 16000,
     extraBody: { reasoning: { effort: 'low', exclude: true } },
     headers: { 'X-Title': 'Dinh Duong Cua Toi' }
-  },
-  mistral: {
-    url: 'https://api.mistral.ai/v1',
-    maxImages: 8,
-    models: async () => ['mistral-small-latest', 'mistral-medium-latest']
   },
   cohere: {
     url: 'https://api.cohere.com/v2',
@@ -870,7 +866,7 @@ async function askChatService(service, kind, args) {
 }
 
 /**
- * Asks a free AI service ('gemini' | 'groq' | 'openrouter' | 'mistral' | 'cohere') for request kind ('meal' | 'targets' | 'plan' |
+ * Asks a free AI service ('gemini' | 'groq' | 'openrouter' | 'cohere') for request kind ('meal' | 'targets' | 'plan' |
  * 'labs') with the user's own key; resolves to { result, costUsd: 0 }.
  */
 export async function askFree(service, kind, args) {
