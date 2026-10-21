@@ -462,12 +462,12 @@ export function parseManualReply(kind, reply) {
   return kind === 'meal' ? mealTotals(Object.assign(checked.data, data.nutrients ? { nutrients: data.nutrients } : {})) : checked.data;
 }
 
-// ---- Free AI services: Gemini and Groq ----
+// ---- Free AI services: Gemini, Groq, OpenRouter, Mistral, Cohere ----
 //
 // Both get the same question as the Claude app and their JSON replies go through the same
 // checks (parseManualReply), so results have the same shape as in the other modes.
 
-const FREE_NAMES = { gemini: 'Gemini', groq: 'Groq' };
+const FREE_NAMES = { gemini: 'Gemini', groq: 'Groq', openrouter: 'OpenRouter', mistral: 'Mistral', cohere: 'Cohere' };
 
 function freeError(service, status, message) {
   const name = FREE_NAMES[service];
@@ -498,7 +498,9 @@ async function callJson(service, url, headers, body) {
     throw new AiError(`Không kết nối được tới ${FREE_NAMES[service]}. Kiểm tra mạng rồi thử lại.`);
   }
   const data = await response.json().catch(() => ({}));
-  return { status: response.status, data, message: data.error && data.error.message || '' };
+  // Each service words its errors a little differently.
+  const error = data.error && typeof data.error === 'object' ? data.error.message : data.error;
+  return { status: response.status, data, message: String(error || data.message || data.detail || '') };
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -603,23 +605,20 @@ async function askGemini(kind, args) {
   return parseFreeReply('gemini', kind, text);
 }
 
-// -- Groq (free with a GroqCloud key; very fast, at most 5 photos per request) --
+// -- Chat-style services: Groq, OpenRouter, Mistral, Cohere --
+//
+// All four take OpenAI-style chat messages (text plus base64 data-URL images) and differ only in
+// address, model choice and a few details, described in CHAT_SERVICES.
 
-const GROQ_URL = 'https://api.groq.com/openai/v1';
-const GROQ_MAX_IMAGES = 5;
 // Groq's line-up changes often, so the model is picked from what the key can use: preferred
 // vision models first, then anything whose name suggests it reads images.
 const GROQ_VISION_MODELS = [
   'qwen/qwen3.8-27b', 'qwen/qwen3.6-27b', 'meta-llama/llama-4-maverick-17b-128e-instruct', 'meta-llama/llama-4-scout-17b-16e-instruct'
 ];
 const GROQ_VISION_HINT = /vision|-vl\b|-vl-|llama-4|qwen3\.\d+-\d+b/i;
-const groqModelByKey = {};
 
-async function groqModel(apiKey) {
-  if (groqModelByKey[apiKey]) {
-    return groqModelByKey[apiKey];
-  }
-  const answer = await callJson('groq', GROQ_URL + '/models', { Authorization: 'Bearer ' + apiKey });
+async function groqModels(apiKey) {
+  const answer = await callJson('groq', CHAT_SERVICES.groq.url + '/models', { Authorization: 'Bearer ' + apiKey });
   if (answer.status !== 200) {
     throw freeError('groq', answer.status, answer.message);
   }
@@ -628,36 +627,116 @@ async function groqModel(apiKey) {
   if (!model) {
     throw new AiError('Groq hiện không có model đọc được ảnh cho key này. Hãy dùng Gemini.');
   }
-  groqModelByKey[apiKey] = model;
-  return model;
+  return [model];
 }
 
-async function groqChat(apiKey, messages) {
-  const model = await groqModel(apiKey);
-  // Little or no "thinking" keeps answers fast; models that don't think reject the setting.
+// OpenRouter's free (":free") models come and go every few weeks, so they are read from its
+// catalogue: free, reads images, answers in text. Preferred ones first, then the rest.
+const OPENROUTER_PREFERRED = ['google/gemma-4-31b-it:free', 'nvidia/nemotron-3.5-super-vl:free', 'google/gemma-4-26b-a4b-it:free'];
+const OPENROUTER_MAX_TRIES = 4;
+
+async function openRouterModels(apiKey) {
+  const answer = await callJson('openrouter', CHAT_SERVICES.openrouter.url + '/models', { Authorization: 'Bearer ' + apiKey });
+  if (answer.status !== 200) {
+    throw freeError('openrouter', answer.status, answer.message);
+  }
+  const free = (answer.data.data || []).filter((m) => {
+    const arch = m.architecture || {};
+    const price = m.pricing || {};
+    return /:free$/.test(m.id) && +price.prompt === 0 && +price.completion === 0
+      && (arch.input_modalities || []).includes('image') && (arch.output_modalities || ['text']).join() === 'text'
+      && !/safety|guard/i.test(m.id);
+  }).map((m) => m.id);
+  if (!free.length) {
+    throw new AiError('OpenRouter hiện không có model miễn phí nào đọc được ảnh. Hãy dùng Gemini hoặc Groq.');
+  }
+  const preferred = OPENROUTER_PREFERRED.filter((id) => free.includes(id));
+  return preferred.concat(free.filter((id) => !preferred.includes(id))).slice(0, OPENROUTER_MAX_TRIES);
+}
+
+const CHAT_SERVICES = {
+  groq: {
+    url: 'https://api.groq.com/openai/v1',
+    maxImages: 5,
+    models: groqModels,
+    // Little or no "thinking" keeps answers fast; models that don't think reject the setting.
+    efforts: ['none', 'low', null],
+    maxTokensField: 'max_completion_tokens'
+  },
+  openrouter: {
+    url: 'https://openrouter.ai/api/v1',
+    maxImages: 5,
+    models: openRouterModels,
+    // Not every free model supports JSON mode; the reply's JSON is found in the text anyway.
+    jsonMode: false,
+    headers: { 'X-Title': 'Dinh Duong Cua Toi' }
+  },
+  mistral: {
+    url: 'https://api.mistral.ai/v1',
+    maxImages: 8,
+    models: async () => ['mistral-small-latest', 'mistral-medium-latest']
+  },
+  cohere: {
+    url: 'https://api.cohere.com/v2',
+    chatPath: '/chat',
+    maxImages: 20,
+    models: async () => ['command-a-vision-07-2025'],
+    // Cohere's own reply shape: message.content is a list of text parts.
+    replyText: (data) => ((data.message && data.message.content) || []).map((p) => p.text || '').join('')
+  }
+};
+
+const modelsByKey = {};
+
+/** The service's models for this key, best first; looked up once per key while the app is open. */
+async function serviceModels(service, apiKey) {
+  const cacheKey = service + '|' + apiKey;
+  if (!modelsByKey[cacheKey]) {
+    modelsByKey[cacheKey] = await CHAT_SERVICES[service].models(apiKey);
+  }
+  return modelsByKey[cacheKey];
+}
+
+async function chatAsk(service, apiKey, messages) {
+  const cfg = CHAT_SERVICES[service];
+  const models = await serviceModels(service, apiKey);
   let answer;
-  for (const effort of accepted(model, ['none', 'low', null])) {
-    const body = { model, messages, response_format: { type: 'json_object' }, temperature: 0.3, max_completion_tokens: 8000 };
-    if (effort) {
-      body.reasoning_effort = effort;
+  let model;
+  for (model of models) {
+    for (const effort of accepted(model, cfg.efforts || [null])) {
+      const body = { model, messages, temperature: 0.3 };
+      body[cfg.maxTokensField || 'max_tokens'] = 8000;
+      if (cfg.jsonMode !== false) {
+        body.response_format = { type: 'json_object' };
+      }
+      if (effort) {
+        body.reasoning_effort = effort;
+      }
+      answer = await callJsonRetrying(service, [1500, 4000], cfg.url + (cfg.chatPath || '/chat/completions'),
+        Object.assign({ Authorization: 'Bearer ' + apiKey }, cfg.headers), body);
+      if (!(answer.status === 400 && /reasoning/i.test(answer.message))) {
+        break;
+      }
+      rejectedSettings.add(model + '|' + JSON.stringify(effort));
     }
-    answer = await callJsonRetrying('groq', [1500, 4000], GROQ_URL + '/chat/completions', { Authorization: 'Bearer ' + apiKey }, body);
-    if (!(answer.status === 400 && /reasoning/i.test(answer.message))) {
+    // Missing, busy or out of free quota: try the next model, if there is one.
+    if (answer.status !== 404 && answer.status !== 429 && answer.status < 500) {
       break;
     }
-    rejectedSettings.add(model + '|' + JSON.stringify(effort));
   }
   if (answer.status !== 200) {
-    throw freeError('groq', answer.status, answer.message);
+    throw freeError(service, answer.status, answer.message);
   }
-  const choice = (answer.data.choices || [])[0];
-  if (!choice || !choice.message || !choice.message.content) {
-    throw new AiError('Groq không trả lời yêu cầu này. Thử lại.');
+  const text = cfg.replyText
+    ? cfg.replyText(answer.data)
+    : (((answer.data.choices || [])[0] || {}).message || {}).content;
+  if (!text) {
+    throw new AiError(`${FREE_NAMES[service]} không trả lời yêu cầu này. Thử lại.`);
   }
-  return { text: choice.message.content, model };
+  return { text, model: answer.data.model || model };
 }
 
-function groqMessages(request) {
+function chatMessages(request) {
   return [
     { role: 'system', content: SYSTEM },
     {
@@ -668,13 +747,14 @@ function groqMessages(request) {
   ];
 }
 
-async function askGroq(kind, args) {
-  if (kind === 'labs' && args.imagesBase64.length > GROQ_MAX_IMAGES) {
-    // Read the photos 5 at a time and put the results together.
+async function askChatService(service, kind, args) {
+  const maxImages = CHAT_SERVICES[service].maxImages;
+  if (kind === 'labs' && args.imagesBase64.length > maxImages) {
+    // Read the photos a few at a time and put the results together.
     const tests = [];
     const seen = new Set();
-    for (let i = 0; i < args.imagesBase64.length; i += GROQ_MAX_IMAGES) {
-      const part = await askGroq(kind, Object.assign({}, args, { imagesBase64: args.imagesBase64.slice(i, i + GROQ_MAX_IMAGES) }));
+    for (let i = 0; i < args.imagesBase64.length; i += maxImages) {
+      const part = await askChatService(service, kind, Object.assign({}, args, { imagesBase64: args.imagesBase64.slice(i, i + maxImages) }));
       part.tests.forEach((t) => {
         const key = [t.type, t.name.toLowerCase(), t.date].join('|');
         if (!seen.has(key)) {
@@ -685,19 +765,19 @@ async function askGroq(kind, args) {
     }
     return { tests };
   }
-  const { text } = await groqChat(args.apiKey, groqMessages(BUILDERS[kind](args)));
-  return parseFreeReply('groq', kind, text);
+  const { text } = await chatAsk(service, args.apiKey, chatMessages(BUILDERS[kind](args)));
+  return parseFreeReply(service, kind, text);
 }
 
 /**
- * Asks a free AI service ('gemini' | 'groq') for request kind ('meal' | 'targets' | 'plan' |
+ * Asks a free AI service ('gemini' | 'groq' | 'openrouter' | 'mistral' | 'cohere') for request kind ('meal' | 'targets' | 'plan' |
  * 'labs') with the user's own key; resolves to { result, costUsd: 0 }.
  */
 export async function askFree(service, kind, args) {
   if (!args.apiKey) {
     throw new AiError(`Chưa có ${FREE_NAMES[service]} API key. Vào Cài đặt để nhập key.`);
   }
-  const result = await (service === 'groq' ? askGroq(kind, args) : askGemini(kind, args));
+  const result = await (service === 'gemini' ? askGemini(kind, args) : askChatService(service, kind, args));
   return { result, costUsd: 0 };
 }
 
@@ -708,8 +788,8 @@ export async function testFreeKey(service, apiKey, speed) {
   }
   const started = Date.now();
   const question = 'Reply with this JSON object only: {"ok": true}';
-  const { model } = service === 'groq'
-    ? await groqChat(apiKey, [{ role: 'user', content: question }])
-    : await geminiGenerate(apiKey, speed, [{ role: 'user', parts: [{ text: question }] }]);
+  const { model } = service === 'gemini'
+    ? await geminiGenerate(apiKey, speed, [{ role: 'user', parts: [{ text: question }] }])
+    : await chatAsk(service, apiKey, [{ role: 'user', content: question }]);
   return { model, seconds: Math.round((Date.now() - started) / 100) / 10 };
 }

@@ -167,7 +167,8 @@
   /**
    * How the AI is asked: 'app' shares the question to the Claude app (free with a Claude Pro
    * plan) and the user pastes the reply back; 'api' calls the Claude API with the user's key
-   * (paid); 'gemini' and 'groq' call that free service with the user's own free key.
+   * (paid); 'gemini', 'groq', 'openrouter', 'mistral' and 'cohere' call that free service with
+   * the user's own free key.
    */
   function askMode(settings) {
     settings = settings || settingsCache;
@@ -175,7 +176,13 @@
   }
 
   // The free services: settings key field and the name shown while waiting.
-  var FREE_SERVICES = { gemini: { key: 'geminiKey', name: 'Gemini' }, groq: { key: 'groqKey', name: 'Groq' } };
+  var FREE_SERVICES = {
+    gemini: { key: 'geminiKey', name: 'Gemini' },
+    groq: { key: 'groqKey', name: 'Groq' },
+    openrouter: { key: 'openrouterKey', name: 'OpenRouter' },
+    mistral: { key: 'mistralKey', name: 'Mistral' },
+    cohere: { key: 'cohereKey', name: 'Cohere' }
+  };
 
   /** True for the modes where the answer comes back straight into the app (one tap). */
   function isDirect(mode) {
@@ -1840,6 +1847,12 @@
           'Một chạm, kết quả hiện ngay trong app. Cần Gemini API key miễn phí từ aistudio.google.com (có giới hạn số lần mỗi ngày).'),
         modeChoice('groq', 'Groq (miễn phí, rất nhanh)',
           'Một chạm, trả lời thường chỉ vài giây. Cần Groq API key miễn phí từ console.groq.com. Đọc ảnh món ăn có thể kém chính xác hơn Gemini.'),
+        modeChoice('openrouter', 'OpenRouter (miễn phí)',
+          'Một chạm. Dùng các model miễn phí đọc được ảnh (Gemma, Nemotron...), app tự chọn. Key miễn phí từ openrouter.ai; khoảng 50 lần mỗi ngày.'),
+        modeChoice('mistral', 'Mistral (miễn phí)',
+          'Một chạm. Model Mistral Small đọc được ảnh. Key miễn phí từ console.mistral.ai (cần xác minh số điện thoại).'),
+        modeChoice('cohere', 'Cohere (miễn phí, 1.000 lần/tháng)',
+          'Một chạm. Model Command A Vision. Key dùng thử miễn phí từ dashboard.cohere.com, khoảng 1.000 lần mỗi tháng.'),
         modeChoice('api', 'Claude API key (trả phí theo lần dùng)',
           'Một chạm, kết quả hiện ngay trong app. Cần API key và tiền nạp ở console.anthropic.com (khoảng vài cent mỗi bữa).')));
 
@@ -1912,6 +1925,22 @@
         'Groq đọc tối đa 5 ảnh mỗi lần; khi đọc nhiều ảnh xét nghiệm, app tự chia thành nhiều lần.'
       ]));
 
+      viewEl.appendChild(freeKeyCard('openrouter', 'sk-or-...', [
+        'Vào openrouter.ai → đăng nhập (Google, GitHub hoặc email) → Keys → "Create API Key" → sao chép rồi dán vào đây. Miễn phí, không cần thẻ. Key chỉ lưu trên điện thoại này.',
+        'App chỉ dùng model có đuôi ":free" (không bao giờ tốn tiền) và tự chuyển sang model miễn phí khác khi một model bận. Giới hạn khoảng 50 lần mỗi ngày (1.000 lần nếu tài khoản từng nạp từ 10 USD).',
+        'Lưu ý: nhà cung cấp model miễn phí có thể lưu và dùng dữ liệu gửi lên.'
+      ]));
+
+      viewEl.appendChild(freeKeyCard('mistral', 'Mistral API key', [
+        'Vào console.mistral.ai → đăng ký → chọn gói "Experiment" (miễn phí, cần xác minh số điện thoại) → API Keys → "Create new key" → sao chép rồi dán vào đây. Key chỉ lưu trên điện thoại này.',
+        'Lưu ý: với gói miễn phí, Mistral có thể dùng dữ liệu gửi lên để huấn luyện model.'
+      ]));
+
+      viewEl.appendChild(freeKeyCard('cohere', 'Cohere API key', [
+        'Vào dashboard.cohere.com → đăng ký → API Keys → sao chép "Trial key" rồi dán vào đây. Miễn phí, không cần thẻ. Key chỉ lưu trên điện thoại này.',
+        'Key dùng thử có khoảng 1.000 lần hỏi mỗi tháng và chỉ dành cho việc dùng cá nhân.'
+      ]));
+
       var keyInput = h('input', { type: 'password', autocomplete: 'off', placeholder: 'sk-ant-...' });
       keyInput.value = s.apiKey || '';
       viewEl.appendChild(h('div', { class: 'card', hidden: mode !== 'api' },
@@ -1957,7 +1986,7 @@
       viewEl.appendChild(h('div', { class: 'card' },
         h('img', { class: 'about-logo', src: 'img/logo.png', alt: 'Logo' }),
         h('h2', null, 'ℹ️ Về ứng dụng'),
-        h('p', { class: 'muted small' }, 'Ảnh bữa ăn, hồ sơ và kết quả xét nghiệm được gửi tới Anthropic (Claude), Google (Gemini) hoặc Groq, tùy cách hỏi đã chọn, để phân tích mỗi khi bạn bấm phân tích; ngoài ra mọi dữ liệu chỉ lưu trên điện thoại.'),
+        h('p', { class: 'muted small' }, 'Ảnh bữa ăn, hồ sơ và kết quả xét nghiệm được gửi tới Anthropic (Claude), Google (Gemini), Groq, OpenRouter, Mistral hoặc Cohere, tùy cách hỏi đã chọn, để phân tích mỗi khi bạn bấm phân tích; ngoài ra mọi dữ liệu chỉ lưu trên điện thoại.'),
         h('p', { class: 'muted small' }, 'Mỗi lần hỏi Claude chỉ gửi dữ liệu của hôm nay (ảnh bữa đang ăn, các bữa trong ngày); các ngày trước không được gửi.'),
         h('p', { class: 'muted small' }, 'Ảnh gốc của bữa ăn được giữ ' + PHOTO_KEEP_DAYS + ' ngày rồi tự xóa; ảnh nhỏ trong lịch sử được giữ mãi. File sao lưu không gồm ảnh gốc.'),
         h('p', { class: 'muted small' }, 'Số liệu dinh dưỡng là ước tính của AI và có thể sai. Ứng dụng không thay thế bác sĩ hoặc chuyên gia dinh dưỡng.'),
@@ -1965,7 +1994,7 @@
     });
   }
 
-  var APP_VERSION = '1.14';
+  var APP_VERSION = '1.15';
 
   function exportBackup() {
     Db.exportAll().then(function (data) {
