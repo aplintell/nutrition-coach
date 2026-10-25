@@ -103,10 +103,17 @@ function describeProfile(profile, labs) {
 const ZERO_NUTRIENTS = Object.fromEntries(NUTRIENTS.map((n) => [n.key, 0]));
 
 // One line about the day's logged exercise, e.g. "Cầu lông 12 set, Nhảy dây 2000 lần (~990 kcal extra)".
+// Sunbathing: the skin's vitamin D is already counted in the day's totals, so it isn't advised again.
+function sunLine(exercise) {
+  const sun = exercise.reduce((sum, e) => sum + (e.vitamin_d_ug || 0), 0);
+  return sun ? ` Sunbathing today made about ${Math.round(sun * 10) / 10} µg vitamin D in the skin, already included in the vitamin_d_ug totals.` : '';
+}
+
 function describeExercise(exercise) {
   return exercise && exercise.length
     ? 'Exercise logged today: ' + exercise.map((e) => `${e.name} ${e.amount} ${e.unit}`).join(', ')
       + ` (about ${exercise.reduce((sum, e) => sum + e.kcal, 0)} kcal burned above resting).`
+      + sunLine(exercise)
     : 'No exercise logged today.';
 }
 

@@ -716,6 +716,45 @@
     return ex ? ex.name : e.name;
   }
 
+  // ---- Vitamin D from the sun (Sunbath) ----
+  //
+  // Skin makes vitamin D from UVB. A rough estimate for Vietnam (strong UV, skin type III-IV):
+  // the whole body in strong sun makes about 10 µg (400 IU) a minute; early morning or late
+  // afternoon about 3 µg. Scaled by the share of skin in the sun, and only the first 30 minutes
+  // count, since production levels off after that. Clouds, glass and sunscreen block most of it.
+  var SUN_SKIN = {
+    face: { label: 'Mặt + bàn tay', share: 0.1 },
+    arms: { label: 'Tay + chân (áo thun, quần short)', share: 0.25 },
+    most: { label: 'Phần lớn cơ thể', share: 0.6 }
+  };
+  var SUN_TIME = {
+    mild: { label: 'Sáng sớm / chiều muộn', rate: 3 },
+    strong: { label: '10h–15h (nắng gắt)', rate: 10 }
+  };
+  var SUN_MAX_MINUTES = 30;
+
+  /** µg of vitamin D made in `minutes` of sun with that much skin out at that time of day. */
+  function sunVitaminD(minutes, skin, time) {
+    var s = SUN_SKIN[skin] || SUN_SKIN.arms;
+    var t = SUN_TIME[time] || SUN_TIME.mild;
+    return Math.round(t.rate * s.share * Math.min(minutes, SUN_MAX_MINUTES) * 10) / 10;
+  }
+
+  /** Nutrients taken in on a day: the meals, plus vitamin D made in the sun. */
+  function dayIntake(meals, exercises) {
+    var t = sumNutrients(meals);
+    (exercises || []).forEach(function (e) {
+      t.vitamin_d_ug += e.vitamin_d_ug || 0;
+    });
+    return t;
+  }
+
+  function sunFromExercises(exercises) {
+    return Math.round((exercises || []).reduce(function (sum, e) {
+      return sum + (e.vitamin_d_ug || 0);
+    }, 0) * 10) / 10;
+  }
+
   function exerciseMinutes(ex, amount) {
     return ex.minutesEach ? amount * ex.minutesEach : ex.perMinute ? amount / ex.perMinute : amount;
   }
@@ -734,15 +773,20 @@
   // Share of the extra energy that goes to each macronutrient (kcal per g: carbs 4, protein 4, fat 9).
   var EXERCISE_SPLIT = { energy_kcal: 1, carbs_g: 0.55 / 4, protein_g: 0.15 / 4, fat_g: 0.3 / 9 };
 
-  /** The day's targets raised for the energy burned by its exercise. */
-  function withExercise(targets, kcal) {
-    if (!targets || !kcal) {
+  /**
+   * The day's targets raised for the energy burned by its exercise. sunUg, the vitamin D the skin
+   * made in the sun, raises the vitamin D maximum by that much: the upper limit is a safety limit
+   * for food and supplements, and the body itself stops sun-made vitamin D from reaching harmful
+   * levels, so sunshine alone never counts as "too much".
+   */
+  function withExercise(targets, kcal, sunUg) {
+    if (!targets || (!kcal && !sunUg)) {
       return targets;
     }
     var ranges = Object.assign({}, targets.targets);
     Object.keys(EXERCISE_SPLIT).forEach(function (key) {
       var range = ranges[key];
-      var extra = kcal * EXERCISE_SPLIT[key];
+      var extra = (kcal || 0) * EXERCISE_SPLIT[key];
       if (range) {
         ranges[key] = {
           min: range.min === null ? null : Math.round(range.min + extra),
@@ -750,12 +794,16 @@
         };
       }
     });
+    var d = ranges.vitamin_d_ug;
+    if (sunUg && d && d.max !== null) {
+      ranges.vitamin_d_ug = { min: d.min, max: Math.round((d.max + sunUg) * 10) / 10 };
+    }
     return Object.assign({}, targets, { targets: ranges });
   }
 
   function exerciseForAi(exercises) {
     return exercises.map(function (e) {
-      return { name: exerciseName(e), amount: e.amount, unit: e.unit, kcal: e.kcal };
+      return { name: exerciseName(e), amount: e.amount, unit: e.unit, kcal: e.kcal, vitamin_d_ug: e.vitamin_d_ug || 0 };
     });
   }
 
@@ -797,10 +845,11 @@
       });
       var exercises = r[5];
       var burned = exerciseTotal(exercises);
-      var targets = withExercise(r[1], burned);
+      var targets = withExercise(r[1], burned, sunFromExercises(exercises));
       var plan = r[2];
       var profile = r[3];
-      var totals = sumNutrients(meals);
+      var totals = dayIntake(meals, exercises);
+      var sun = sunFromExercises(exercises);
 
       if (!profile || !targets) {
         viewEl.appendChild(h('div', { class: 'card' },
@@ -819,6 +868,7 @@
         h('h2', null, 'Tổng trong ngày'),
         meals.length === 0 ? h('p', { class: 'muted' }, 'Chưa có bữa ăn nào.') : null,
         burned && targets ? h('p', { class: 'muted small' }, '🏃 Mục tiêu đã cộng thêm ~' + burned + ' kcal nhờ tập luyện hôm nay.') : null,
+        sun ? h('p', { class: 'muted small' }, '☀️ Vitamin D đã gồm ~' + fmt(sun, 'µg') + ' µg da tự tạo khi tắm nắng.') : null,
         nutrientBars(totals, targets)));
 
       if (isToday) {
@@ -900,7 +950,8 @@
     if (exercises.length) {
       card.appendChild(h('div', null, exercises.map(function (e) {
         var row = h('div', { class: 'ex-row' },
-          h('span', { class: 'name' }, exerciseName(e) + ' · ' + e.amount + ' ' + e.unit),
+          h('span', { class: 'name' }, exerciseName(e) + ' · ' + e.amount + ' ' + e.unit,
+            e.vitamin_d_ug ? h('div', { class: 'muted small' }, '☀️ ~' + fmt(e.vitamin_d_ug, 'µg') + ' µg vitamin D · ' + (SUN_SKIN[e.sunSkin] || SUN_SKIN.arms).label.toLowerCase() + ', ' + (SUN_TIME[e.sunTime] || SUN_TIME.mild).label.toLowerCase()) : null),
           h('span', { class: 'kcal' }, '~' + e.kcal + ' kcal'),
           h('button', {
             type: 'button',
@@ -927,7 +978,7 @@
     }
 
     function addExercise(ex, amount) {
-      return Db.put('exercises', {
+      var record = {
         day: key,
         createdAt: new Date().toISOString(),
         type: ex.id,
@@ -936,8 +987,29 @@
         unit: ex.unit,
         minutes: Math.round(exerciseMinutes(ex, amount)),
         kcal: exerciseKcal(ex, amount, weight)
+      };
+      if (ex.id === 'sunbath') {
+        record.sunSkin = skinSelect.value;
+        record.sunTime = timeSelect.value;
+        record.vitamin_d_ug = sunVitaminD(amount, record.sunSkin, record.sunTime);
+      }
+      return Db.put('exercises', record);
+    }
+
+    function sunOptions(map, selected) {
+      return Object.keys(map).map(function (k) {
+        var o = h('option', { value: k }, map[k].label);
+        o.selected = k === selected;
+        return o;
       });
     }
+    var skinSelect = h('select', null, sunOptions(SUN_SKIN, 'arms'));
+    var timeSelect = h('select', null, sunOptions(SUN_TIME, 'mild'));
+    var sunBox = h('div', { hidden: true },
+      h('div', { class: 'grid-2' },
+        h('label', { class: 'field' }, 'Phần da để nắng', skinSelect),
+        h('label', { class: 'field' }, 'Giờ tắm nắng', timeSelect)),
+      h('p', { class: 'muted small', style: 'margin-top:-6px' }, 'Không bôi kem chống nắng, không qua kính; trời nhiều mây thì da tạo ít hơn.'));
 
     var typeSelect = h('select', { name: 'type' }, EXERCISES.map(function (e) {
       return h('option', { value: e.id }, e.name);
@@ -949,6 +1021,16 @@
       var ex = EXERCISE_BY_ID[typeSelect.value];
       unitLabel.textContent = AMOUNT_LABEL[ex.unit];
       var amount = parseFloat(amountInput.value);
+      var isSun = ex.id === 'sunbath';
+      sunBox.hidden = !isSun;
+      if (isSun) {
+        var d = amount > 0 ? sunVitaminD(amount, skinSelect.value, timeSelect.value) : 0;
+        preview.textContent = amount > 0
+          ? '☀️ Da tạo khoảng ' + fmt(d, 'µg') + ' µg vitamin D (~' + Math.round(d * 40) + ' IU)'
+            + (amount > SUN_MAX_MINUTES ? ' — chỉ tính ' + SUN_MAX_MINUTES + ' phút đầu, sau đó da gần như không tạo thêm' : '') + '.'
+          : '';
+        return;
+      }
       preview.textContent = amount > 0
         ? '≈ ' + Math.round(exerciseMinutes(ex, amount)) + ' phút, tiêu hao thêm ~' + exerciseKcal(ex, amount, weight) + ' kcal'
           + (weight ? '' : ' (tính theo ' + DEFAULT_WEIGHT_KG + ' kg — nhập cân nặng trong Hồ sơ để chính xác hơn)')
@@ -956,11 +1038,14 @@
     }
     typeSelect.addEventListener('change', update);
     amountInput.addEventListener('input', update);
+    skinSelect.addEventListener('change', update);
+    timeSelect.addEventListener('change', update);
 
     var form = h('form', { hidden: true, novalidate: true },
       h('div', { class: 'grid-2' },
         h('label', { class: 'field' }, 'Môn', typeSelect),
         h('label', { class: 'field' }, unitLabel, amountInput)),
+      sunBox,
       preview,
       h('button', { class: 'btn primary', type: 'submit' }, 'Thêm'));
     form.addEventListener('submit', function (e) {
@@ -1058,12 +1143,16 @@
     var ex = EXERCISE_BY_ID[e.type];
     function totalFor(amount) {
       var total = Math.round((e.amount + amount) * 100) / 100;
-      return {
+      var updated = {
         amount: total,
         // An entry whose exercise type is unknown keeps its own energy per unit.
         minutes: Math.round(ex ? exerciseMinutes(ex, total) : (e.minutes || 0) * total / e.amount),
         kcal: ex ? exerciseKcal(ex, total, weight) : Math.round(e.kcal * total / e.amount)
       };
+      if (e.type === 'sunbath') {
+        updated.vitamin_d_ug = sunVitaminD(total, e.sunSkin, e.sunTime);
+      }
+      return updated;
     }
     function typed() {
       return parseFloat(input.value.replace(',', '.'));
@@ -1076,7 +1165,8 @@
       var amount = typed();
       if (amount > 0) {
         var t = totalFor(amount);
-        preview.textContent = 'Tổng: ' + e.amount + ' + ' + amount + ' = ' + t.amount + ' ' + e.unit + ', ~' + t.kcal + ' kcal';
+        preview.textContent = 'Tổng: ' + e.amount + ' + ' + amount + ' = ' + t.amount + ' ' + e.unit + ', ~' + t.kcal + ' kcal'
+          + (t.vitamin_d_ug !== undefined ? ', ☀️ ~' + fmt(t.vitamin_d_ug, 'µg') + ' µg vitamin D' : '');
       } else {
         preview.textContent = '';
       }
@@ -1301,8 +1391,8 @@
     Promise.all([
       Db.getAllByIndex('meals', 'day', mealDay), Db.getKv('targets'), Db.getAllByIndex('exercises', 'day', mealDay)
     ]).then(function (res) {
-      var targets = withExercise(res[1], exerciseTotal(res[2]));
-      var before = sumNutrients(res[0]);
+      var targets = withExercise(res[1], exerciseTotal(res[2]), sunFromExercises(res[2]));
+      var before = dayIntake(res[0], res[2]);
       var overAfter = [];
       if (targets) {
         NUTRIENTS.forEach(function (n) {
@@ -1426,7 +1516,7 @@
           note: p.note.trim(),
           profile: profile,
           labs: labs,
-          eatenToday: roundAll(sumNutrients(today[0])),
+          eatenToday: roundAll(dayIntake(today[0], today[1])),
           exercise: exerciseForAi(today[1]),
           now: dayTitle(day) + ' ' + (p.time || (day === dayKey() ? timeLabel() : '12:00'))
         };
@@ -1500,9 +1590,9 @@
       viewEl.appendChild(h('div', { class: 'card' }, days.map(function (day) {
         var meals = byDay[day] || [];
         var burned = exerciseTotal(exerciseByDay[day] || []);
-        var dayTargets = withExercise(r[1], burned);
+        var dayTargets = withExercise(r[1], burned, sunFromExercises(exerciseByDay[day]));
         var ranges = dayTargets ? dayTargets.targets : null;
-        var totals = sumNutrients(meals);
+        var totals = dayIntake(meals, exerciseByDay[day]);
         var over = ranges ? NUTRIENTS.filter(function (n) {
           return statusOf(totals[n.key], ranges[n.key]) === 'over';
         }) : [];
@@ -1586,8 +1676,10 @@
       return null;
     }
     var burnedByDay = {};
+    var sunByDay = {};
     exercises.forEach(function (e) {
       burnedByDay[e.day] = (burnedByDay[e.day] || 0) + e.kcal;
+      sunByDay[e.day] = (sunByDay[e.day] || 0) + (e.vitamin_d_ug || 0);
     });
     var days = {};
     meals.forEach(function (m) {
@@ -1595,7 +1687,7 @@
     });
     var sum = {};
     Object.keys(days).forEach(function (day) {
-      var ranges = withExercise(targets, burnedByDay[day] || 0).targets;
+      var ranges = withExercise(targets, burnedByDay[day] || 0, sunByDay[day] || 0).targets;
       NUTRIENTS.forEach(function (n) {
         var range = ranges[n.key];
         var acc = sum[n.key] = sum[n.key] || { min: 0, max: 0 };
@@ -1643,7 +1735,13 @@
         set[e.day] = true;
         return set;
       }, {})).length;
-      var totals = sumNutrients(meals);
+      var counted = {};
+      meals.forEach(function (m) {
+        counted[m.day] = true;
+      });
+      var totals = dayIntake(meals, exercises.filter(function (e) {
+        return counted[e.day];
+      }));
       var burned = exerciseTotal(exercises);
 
       viewEl.appendChild(summaryPicker(from, to, allDays[0]));
@@ -2251,7 +2349,7 @@
     });
   }
 
-  var APP_VERSION = '1.20';
+  var APP_VERSION = '1.21';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
