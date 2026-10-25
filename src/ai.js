@@ -128,7 +128,7 @@ function mealRequest({ imageBase64, note, profile, labs, eatenToday, exercise, n
       '',
       'The note is written by the person who is eating, so it is more reliable than the photo: when they disagree (which dish, how much, what is left uneaten), follow the note.',
       'Work item by item:',
-      '1. List each food and drink as its own item. Count separately what adds real energy, fat, sodium or cholesterol: cooking oil or fat, sauces and dips, broth that is drunk, eggs, organ meats, skin.',
+      '1. List each food and drink as its own item. Count separately what adds real energy, fat, saturated fat, sodium or cholesterol: cooking oil, lard or butter, fatty meat and skin, coconut milk, sauces and dips, broth that is drunk, eggs, organ meats.',
       '2. Estimate the edible grams of each item as eaten (no bones or shells), using plates, bowls, chopsticks and hands in the photo for scale.',
       '3. For each item, take its nutrients per 100 g from food-composition data and multiply by grams / 100. Put those numbers in the nutrients of that item. The app adds the items up for the meal total, so do not give a total.',
       'If the photo is not food, set is_food to false and items to an empty list.',

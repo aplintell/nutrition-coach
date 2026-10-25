@@ -668,3 +668,28 @@ table.simple tr.sub td:last-child {
 .card p a {
   color: var(--accent);
 }
+
+/* Tổng kết: total and per-day average side by side */
+table.simple.summary th {
+  padding: 6px 2px;
+  text-align: right;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+table.simple.summary th:first-child {
+  text-align: left;
+}
+
+table.simple.summary td:nth-child(2) {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+table.simple.summary tr.section td {
+  padding-top: 12px;
+  font-weight: 700;
+  text-align: left;
+}
