@@ -682,10 +682,31 @@ table.simple.summary th:first-child {
   text-align: left;
 }
 
-table.simple.summary td:nth-child(2) {
+table.simple.summary {
+  font-size: 0.8rem;
+}
+
+table.simple.summary td:nth-child(n+2) {
   text-align: right;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  padding-left: 6px;
+}
+
+table.simple.summary td .unit,
+table.simple.summary td.need {
+  color: var(--text-dim);
+}
+
+table.simple.summary tr.st-ok td.total { color: var(--ok); }
+table.simple.summary tr.st-under td.total { color: var(--under); }
+table.simple.summary tr.st-over td.total { color: var(--over); font-weight: 700; }
+
+.summary-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 
 table.simple.summary tr.section td {

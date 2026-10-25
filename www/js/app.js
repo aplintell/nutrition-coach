@@ -1574,6 +1574,49 @@
       }, 'Xem tổng kết'));
   }
 
+  var SUMMARY_MARK = { ok: '✅ ', under: '⬇️ ', over: '⬆️ ' };
+
+  /**
+   * What the body needed over the period: each day that has meals logged adds its own daily
+   * target, raised for that day's exercise (the same days the totals and averages count).
+   * A side of a range stays open (null) when the daily target has no min or no max.
+   */
+  function periodTargets(targets, meals, exercises) {
+    if (!targets) {
+      return null;
+    }
+    var burnedByDay = {};
+    exercises.forEach(function (e) {
+      burnedByDay[e.day] = (burnedByDay[e.day] || 0) + e.kcal;
+    });
+    var days = {};
+    meals.forEach(function (m) {
+      days[m.day] = true;
+    });
+    var sum = {};
+    Object.keys(days).forEach(function (day) {
+      var ranges = withExercise(targets, burnedByDay[day] || 0).targets;
+      NUTRIENTS.forEach(function (n) {
+        var range = ranges[n.key];
+        var acc = sum[n.key] = sum[n.key] || { min: 0, max: 0 };
+        acc.min = range && range.min !== null && acc.min !== null ? acc.min + range.min : null;
+        acc.max = range && range.max !== null && acc.max !== null ? acc.max + range.max : null;
+      });
+    });
+    return sum;
+  }
+
+  /** A target range as text, e.g. "120–160", "≥ 25", "≤ 2.000". */
+  function rangeText(range, unit) {
+    if (!range || (range.min === null && range.max === null)) {
+      return '—';
+    }
+    if (range.min !== null && range.max !== null) {
+      return range.min === range.max ? fmt(range.min, unit) : fmt(range.min, unit) + '–' + fmt(range.max, unit);
+    }
+    return range.min !== null ? '≥ ' + fmt(range.min, unit) : '≤ ' + fmt(range.max, unit);
+  }
+
   function renderSummary(from, to) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from || '') || !/^\d{4}-\d{2}-\d{2}$/.test(to || '')) {
       to = dayKey();
@@ -1582,10 +1625,12 @@
     setScreen('Tổng kết', 'history', true);
     var range = IDBKeyRange.bound(from, to);
     return Promise.all([
-      Db.getAllByIndex('meals', 'day', range), Db.getAllByIndex('exercises', 'day', range), Db.getAll('meals')
+      Db.getAllByIndex('meals', 'day', range), Db.getAllByIndex('exercises', 'day', range), Db.getAll('meals'),
+      Db.getKv('targets')
     ]).then(function (r) {
       var meals = r[0];
       var exercises = r[1];
+      var need = periodTargets(r[3], meals, exercises);
       var allDays = r[2].map(function (m) {
         return m.day;
       }).sort();
@@ -1620,22 +1665,38 @@
 
       if (meals.length) {
         var sections = [['main', 'Dinh dưỡng chính'], ['micro', 'Vitamin & khoáng chất']];
+        var count = { ok: 0, under: 0, over: 0 };
+        var table = h('table', { class: 'simple summary' },
+          h('thead', null, h('tr', null, h('th', null, 'Chất'), h('th', null, 'Tổng'), h('th', null, 'Cần'), h('th', null, 'TB/ngày'))),
+          sections.map(function (sec) {
+            return h('tbody', null,
+              h('tr', { class: 'section' }, h('td', { colspan: '4' }, sec[1])),
+              NUTRIENTS.filter(function (n) {
+                return n.group === sec[0];
+              }).map(function (n) {
+                var range = need && need[n.key];
+                var status = statusOf(totals[n.key], range);
+                if (count[status] !== undefined) {
+                  count[status]++;
+                }
+                return h('tr', { class: 'st-' + status },
+                  h('td', null, n.name, h('span', { class: 'unit' }, ' · ' + n.unit)),
+                  h('td', { class: 'total' }, (SUMMARY_MARK[status] || '') + fmt(totals[n.key], n.unit)),
+                  h('td', { class: 'need' }, rangeText(range, n.unit)),
+                  h('td', null, fmt(totals[n.key] / mealDays, n.unit)));
+              }));
+          }));
         viewEl.appendChild(h('div', { class: 'card' },
           h('h2', null, '🍽️ Tổng dinh dưỡng'),
-          h('table', { class: 'simple summary' },
-            h('thead', null, h('tr', null, h('th', null, 'Chất'), h('th', null, 'Tổng'), h('th', null, 'TB/ngày'))),
-            sections.map(function (sec) {
-              return h('tbody', null,
-                h('tr', { class: 'section' }, h('td', { colspan: '3' }, sec[1])),
-                NUTRIENTS.filter(function (n) {
-                  return n.group === sec[0];
-                }).map(function (n) {
-                  return h('tr', null,
-                    h('td', null, n.name),
-                    h('td', null, fmtAmount(n.key, totals[n.key])),
-                    h('td', null, fmtAmount(n.key, totals[n.key] / mealDays)));
-                }));
-            }))));
+          need
+            ? h('p', { class: 'muted small' }, '"Cần" là nhu cầu của ' + mealDays + ' ngày có ghi bữa ăn, theo mục tiêu mỗi ngày trong Hồ sơ'
+              + (exercises.length ? ' (đã cộng thêm cho những ngày có tập)' : '') + '. ✅ đủ · ⬇️ thiếu · ⬆️ vượt.')
+            : h('p', { class: 'muted small' }, 'Chưa có mục tiêu mỗi ngày nên chưa so được với nhu cầu. Tính mục tiêu trong Hồ sơ.'),
+          need ? h('div', { class: 'summary-tags' },
+            h('span', { class: 'tag ok' }, '✅ Đủ: ' + count.ok),
+            h('span', { class: 'tag under' }, '⬇️ Thiếu: ' + count.under),
+            h('span', { class: 'tag over' }, '⬆️ Vượt: ' + count.over)) : null,
+          table));
       }
 
       if (exercises.length) {
@@ -2190,7 +2251,7 @@
     });
   }
 
-  var APP_VERSION = '1.19';
+  var APP_VERSION = '1.20';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
