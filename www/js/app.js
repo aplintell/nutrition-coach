@@ -84,7 +84,8 @@
 
   function fmt(value, unit) {
     var v = Number(value) || 0;
-    var digits = (unit === 'g' && Math.abs(v) < 10) ? 1 : 0;
+    // Small amounts keep a decimal: they matter for vitamins and minerals (B12 1,5 µg, iron 8,5 mg).
+    var digits = (unit !== 'kcal' && Math.abs(v) < 10) ? 1 : 0;
     return v.toLocaleString('vi-VN', { maximumFractionDigits: digits, minimumFractionDigits: 0 });
   }
 
@@ -636,11 +637,12 @@
    * Table rows for the given nutrient keys. Items are the meal's foods with their own nutrients
    * (meals analysed before v1.14 have none), scaled by the share of the meal eaten.
    */
-  function nutrientRows(keys, nutrients, items, portion) {
+  function nutrientRows(keys, nutrients, items, portion, ranges) {
     var rows = [];
     keys.forEach(function (key) {
       var n = NUTRIENT_BY_KEY[key];
-      rows.push(h('tr', null, h('td', null, n.name), h('td', null, fmtAmount(key, nutrients[key]))));
+      rows.push(h('tr', null, h('td', null, n.name), h('td', null, fmtAmount(key, nutrients[key]),
+        ranges ? shareOfDay(nutrients[key], ranges[key]) : null)));
       if (BREAKDOWN_KEYS.indexOf(key) === -1) {
         return;
       }
@@ -654,6 +656,20 @@
       });
     });
     return rows;
+  }
+
+  /**
+   * What share of a day this amount is: of the daily need (min), or for nutrients that only have a
+   * limit (max), of that limit. Blank when there is no target.
+   */
+  function shareOfDay(value, range) {
+    var base = range ? range.min || range.max : null;
+    if (!base) {
+      // An empty slot keeps the amounts lined up with the rows that have a %.
+      return h('span', { class: 'pct' });
+    }
+    var pct = Math.round((Number(value) || 0) / base * 100);
+    return h('span', { class: 'pct' + (!range.min && pct > 100 ? ' over' : '') }, pct + '%');
   }
 
   function nutrientTable(nutrients, items, portion) {
@@ -680,11 +696,14 @@
     { id: 'kb-goblet-curl', name: 'Kettlebell Goblet Curl (5kg)', unit: 'lần', perMinute: 20, met: 3.5 },
     { id: 'kb-triceps-ext', name: 'Kettlebell Overhead Triceps Extension (5kg)', unit: 'lần', perMinute: 20, met: 3.5 },
     { id: 'badminton-1', name: 'Badminton Set - 1 minute', unit: 'lần', minutesEach: 1, met: 5.5 },
+    // Walking at an everyday pace, about 5 km/h (12 minutes per km, MET 3.5).
+    { id: 'walk-min', name: 'Walking - by minute', unit: 'phút', met: 3.5 },
+    { id: 'walk-km', name: 'Walking - by kilometer', unit: 'km', minutesEach: 12, met: 3.5 },
     // Lying in the sun burns hardly more than resting (MET 1.3), so it adds almost nothing to targets.
     { id: 'sunbath', name: 'Sunbath (tắm nắng)', unit: 'phút', met: 1.3 }
   ];
   // What the amount field is called for each unit.
-  var AMOUNT_LABEL = { set: 'Số set', 'lần': 'Số lần (Times)', 'phút': 'Số phút (Minutes)' };
+  var AMOUNT_LABEL = { set: 'Số set', 'lần': 'Số lần (Times)', 'phút': 'Số phút (Minutes)', km: 'Số km (Kilometers)' };
   // Older choices, no longer offered but still needed to recompute or copy entries logged with them.
   var OLD_EXERCISES = [
     { id: 'badminton-10', name: 'Badminton Set - 10 mins', unit: 'lần', minutesEach: 10, met: 5.5 },
@@ -1423,9 +1442,18 @@
           }, c[1]);
         })),
         h('h3', null, 'Dinh dưỡng (phần bạn ăn)'),
+        targets ? h('p', { class: 'muted small' }, '% = phần bữa này đáp ứng so với nhu cầu mỗi ngày (chất cần hạn chế: so với mức tối đa).') : null,
         h('table', { class: 'simple' }, h('tbody', null, nutrientRows(
           ['energy_kcal', 'protein_g', 'carbs_g', 'sugar_g', 'fat_g', 'sat_fat_g', 'cholesterol_mg', 'fiber_g', 'sodium_mg', 'purine_mg'],
-          scaled, r.items, p.portion))),
+          scaled, r.items, p.portion, targets && targets.targets))),
+        h('h3', null, 'Vitamin & khoáng chất'),
+        h('table', { class: 'simple' }, h('tbody', null, nutrientRows(
+          NUTRIENTS.filter(function (n) {
+            return n.group === 'micro';
+          }).map(function (n) {
+            return n.key;
+          }),
+          scaled, r.items, p.portion, targets && targets.targets))),
         h('p', null, r.comment),
         r.warnings.map(function (w) {
           return h('div', { class: 'warning' }, '⚠️ ' + w);
@@ -2349,7 +2377,7 @@
     });
   }
 
-  var APP_VERSION = '1.21';
+  var APP_VERSION = '1.22';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {

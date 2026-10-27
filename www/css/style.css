@@ -714,3 +714,17 @@ table.simple.summary tr.section td {
   font-weight: 700;
   text-align: left;
 }
+
+/* Share of the day's need, after an amount in the meal analysis */
+table.simple .pct {
+  display: inline-block;
+  min-width: 3.2em;
+  margin-left: 6px;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+table.simple .pct.over {
+  color: var(--over);
+  font-weight: 700;
+}
