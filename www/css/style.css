@@ -669,7 +669,7 @@ table.simple tr.sub td:last-child {
   color: var(--accent);
 }
 
-/* Tổng kết: total and per-day average side by side */
+/* Summary: total and per-day average side by side */
 table.simple.summary th {
   padding: 6px 2px;
   text-align: right;

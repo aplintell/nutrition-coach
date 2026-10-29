@@ -21,7 +21,7 @@
   var plugins = cap && cap.Plugins ? cap.Plugins : {};
   var isNative = !!(cap && cap.isNativePlatform && cap.isNativePlatform());
   // Where the data is kept, in the words shown to the user: the APK or the web version.
-  var ON_DEVICE = isNative ? 'trên điện thoại này' : 'trong trình duyệt này';
+  var ON_DEVICE = isNative ? 'on this phone' : 'in this browser';
 
   // ---- Small helpers ----
 
@@ -74,19 +74,20 @@
     return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
   }
 
-  var WEEKDAYS = ['Chủ Nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+  var WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   function dayTitle(key) {
     var p = key.split('-');
     var d = new Date(+p[0], +p[1] - 1, +p[2]);
-    return WEEKDAYS[d.getDay()] + ', ' + d.getDate() + '/' + (d.getMonth() + 1) + '/' + d.getFullYear();
+    return WEEKDAYS[d.getDay()] + ', ' + d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear();
   }
 
   function fmt(value, unit) {
     var v = Number(value) || 0;
-    // Small amounts keep a decimal: they matter for vitamins and minerals (B12 1,5 µg, iron 8,5 mg).
+    // Small amounts keep a decimal: they matter for vitamins and minerals (B12 1.5 µg, iron 8.5 mg).
     var digits = (unit !== 'kcal' && Math.abs(v) < 10) ? 1 : 0;
-    return v.toLocaleString('vi-VN', { maximumFractionDigits: digits, minimumFractionDigits: 0 });
+    return v.toLocaleString('en-US', { maximumFractionDigits: digits, minimumFractionDigits: 0 });
   }
 
   function fmtAmount(key, value) {
@@ -201,6 +202,22 @@
     });
   }
 
+  var ACTIVITY_CHOICES = ['Sedentary (mostly sitting)', 'Lightly active (1–3 sessions/week)', 'Moderately active (3–5 sessions/week)',
+    'Very active (6–7 sessions/week)', 'Heavy physical work'];
+  var GOAL_CHOICES = ['Keep weight', 'Lose weight', 'Gain weight', 'Build muscle'];
+  // Profiles saved before the app switched to English (v1.23) hold the Vietnamese wording.
+  var OLD_CHOICES = {
+    'Nam': 'Male', 'Nữ': 'Female',
+    'Ít vận động (ngồi nhiều)': ACTIVITY_CHOICES[0], 'Vận động nhẹ (1–3 buổi/tuần)': ACTIVITY_CHOICES[1],
+    'Vận động vừa (3–5 buổi/tuần)': ACTIVITY_CHOICES[2], 'Vận động nhiều (6–7 buổi/tuần)': ACTIVITY_CHOICES[3],
+    'Lao động nặng': ACTIVITY_CHOICES[4],
+    'Giữ cân': GOAL_CHOICES[0], 'Giảm cân': GOAL_CHOICES[1], 'Tăng cân': GOAL_CHOICES[2], 'Tăng cơ': GOAL_CHOICES[3]
+  };
+
+  function englishChoice(value) {
+    return OLD_CHOICES[value] || value;
+  }
+
   /** The profile as sent to Claude: what matters for nutrition, with age and BMI worked out. */
   function profileForAi(profile) {
     if (!profile) {
@@ -209,13 +226,13 @@
     var bmi = profile.height_cm && profile.weight_kg
       ? Math.round(profile.weight_kg / Math.pow(profile.height_cm / 100, 2) * 10) / 10 : null;
     return {
-      sex: profile.sex || null,
+      sex: englishChoice(profile.sex) || null,
       age: ageFrom(profile.birthDate),
       height_cm: profile.height_cm || null,
       weight_kg: profile.weight_kg || null,
       bmi: bmi,
-      activity_level: profile.activity || null,
-      goal: profile.goal || null,
+      activity_level: englishChoice(profile.activity) || null,
+      goal: englishChoice(profile.goal) || null,
       conditions_and_medicines: profile.conditions || '',
       diet_notes_and_allergies: profile.dietNotes || ''
     };
@@ -233,7 +250,7 @@
       var mode = askMode(settings);
       var free = FREE_SERVICES[mode];
       if (mode === 'api' && !settings.apiKey || free && !settings[free.key]) {
-        alert('Chưa có API key. Vào Cài đặt để nhập API key, hoặc chọn hỏi qua ứng dụng Claude (miễn phí).');
+        alert('No API key yet. Go to Settings to enter an API key, or choose asking through the Claude app (free).');
         location.hash = '#settings';
         return null;
       }
@@ -284,20 +301,20 @@
     if (isNative && plugins.Share && plugins.Filesystem) {
       return copied.then(function () {
         return Promise.all(request.images.map(function (base64, i) {
-          return plugins.Filesystem.writeFile({ path: 'gui-claude-' + (i + 1) + '.jpg', data: base64, directory: 'CACHE' })
+          return plugins.Filesystem.writeFile({ path: 'ask-claude-' + (i + 1) + '.jpg', data: base64, directory: 'CACHE' })
             .then(function (res) {
               return res.uri;
             });
         }));
       }).then(function (uris) {
-        var options = { title: 'Hỏi Claude', text: request.text, dialogTitle: 'Chọn ứng dụng Claude' };
+        var options = { title: 'Ask Claude', text: request.text, dialogTitle: 'Choose the Claude app' };
         if (uris.length) {
           options.files = uris;
         }
         return plugins.Share.share(options);
       }).catch(function (err) {
         if (!isCancelError(err)) {
-          throw new Error('Không mở được chia sẻ: ' + (err && err.message ? err.message : err));
+          throw new Error('Could not open sharing: ' + (err && err.message ? err.message : err));
         }
       });
     }
@@ -308,16 +325,16 @@
       for (var j = 0; j < bytes.length; j++) {
         data[j] = bytes.charCodeAt(j);
       }
-      return new File([data], 'gui-claude-' + (i + 1) + '.jpg', { type: 'image/jpeg' });
+      return new File([data], 'ask-claude-' + (i + 1) + '.jpg', { type: 'image/jpeg' });
     });
-    var shareData = files.length ? { title: 'Hỏi Claude', text: request.text, files: files } : { title: 'Hỏi Claude', text: request.text };
+    var shareData = files.length ? { title: 'Ask Claude', text: request.text, files: files } : { title: 'Ask Claude', text: request.text };
     var onPhone = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
     if (onPhone && navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
       return copied.then(function () {
         return navigator.share(shareData);
       }).catch(function (err) {
         if (!err || err.name !== 'AbortError') {
-          throw new Error('Không mở được chia sẻ: ' + (err && err.message ? err.message : err));
+          throw new Error('Could not open sharing: ' + (err && err.message ? err.message : err));
         }
       });
     }
@@ -325,8 +342,8 @@
     // attach in claude.ai.
     return copied.then(function () {
       files.forEach(downloadFile);
-      alert('Đã sao chép câu hỏi' + (files.length ? ' và tải về ' + files.length + ' ảnh (thư mục Tải xuống)' : '')
-        + '. Mở claude.ai, dán câu hỏi' + (files.length ? ', đính kèm ảnh vừa tải' : '') + ' rồi gửi.');
+      alert('Question copied' + (files.length ? ' and ' + files.length + ' photo(s) downloaded (Downloads folder)' : '')
+        + '. Open claude.ai, paste the question' + (files.length ? ', attach the downloaded photo(s)' : '') + ' and send.');
     });
   }
 
@@ -376,7 +393,7 @@
     return new Promise(function (resolve) {
       var box = h('textarea', {
         class: 'paste-box',
-        placeholder: 'Giữ ô này → Dán',
+        placeholder: 'Hold this box → Paste',
         spellcheck: 'false',
         autocomplete: 'off'
       });
@@ -385,12 +402,12 @@
         resolve(text);
       }
       var overlay = h('div', { class: 'paste-overlay' },
-        h('div', { class: 'paste-dialog', role: 'dialog', 'aria-label': 'Dán câu trả lời của Claude' },
-          h('p', null, 'Chưa thấy câu trả lời của Claude trong bộ nhớ tạm. Hãy dán câu trả lời vào đây:'),
+        h('div', { class: 'paste-dialog', role: 'dialog', 'aria-label': 'Paste Claude\'s reply' },
+          h('p', null, 'Claude\'s reply isn\'t on the clipboard. Paste the reply here:'),
           box,
           h('div', { class: 'btn-row' },
-            h('button', { class: 'btn', type: 'button', onclick: function () { close(''); } }, 'Hủy'),
-            h('button', { class: 'btn primary', type: 'button', onclick: function () { close(box.value); } }, 'Xong'))));
+            h('button', { class: 'btn', type: 'button', onclick: function () { close(''); } }, 'Cancel'),
+            h('button', { class: 'btn primary', type: 'button', onclick: function () { close(box.value); } }, 'Done'))));
       document.body.appendChild(overlay);
       box.focus();
     });
@@ -422,15 +439,15 @@
       return h('button', { class: 'btn' + (primary ? ' primary' : ''), type: 'button', onclick: onAsk }, label);
     }
     return h('div', null,
-      h('button', { class: 'btn' + (primary ? ' primary' : ''), type: 'button', onclick: onAsk }, '📤 ' + label + ' — gửi cho ứng dụng Claude'),
+      h('button', { class: 'btn' + (primary ? ' primary' : ''), type: 'button', onclick: onAsk }, '📤 ' + label + ' — send to the Claude app'),
       h('button', {
         class: 'btn',
         type: 'button',
         onclick: function () {
           pasteReply(kind, onResult);
         }
-      }, '📋 Dán câu trả lời của Claude'),
-      h('p', { class: 'muted small' }, 'Chọn ứng dụng Claude → bấm gửi → khi Claude trả lời xong, bấm nút sao chép (Copy) dưới câu trả lời → quay lại đây bấm "Dán câu trả lời". Nếu câu hỏi không hiện trong Claude, giữ ô nhập và chọn Dán.'));
+      }, '📋 Paste Claude\'s reply'),
+      h('p', { class: 'muted small' }, 'Choose the Claude app → tap send → when Claude has answered, tap Copy under the reply → come back here and tap "Paste Claude\'s reply". If the question doesn\'t appear in Claude, hold the message box and choose Paste.'));
   }
 
   // ---- Photos ----
@@ -447,7 +464,7 @@
         resolve(canvas.toDataURL('image/jpeg', quality));
       };
       img.onerror = function () {
-        reject(new Error('Không đọc được ảnh.'));
+        reject(new Error('Could not read the photo.'));
       };
       img.src = dataUrl;
     });
@@ -493,9 +510,9 @@
         correctOrientation: true,
         saveToGallery: false,
         promptLabelHeader: title,
-        promptLabelPhoto: 'Chọn từ thư viện',
-        promptLabelPicture: 'Chụp ảnh',
-        promptLabelCancel: 'Hủy'
+        promptLabelPhoto: 'Choose from gallery',
+        promptLabelPicture: 'Take a photo',
+        promptLabelCancel: 'Cancel'
       }).then(function (photo) {
         return photo.dataUrl;
       }, function (err) {
@@ -538,7 +555,7 @@
   }
 
   function reportPhotoError(err) {
-    alert('Không lấy được ảnh: ' + (err && err.message ? err.message : err));
+    alert('Could not get the photo: ' + (err && err.message ? err.message : err));
   }
 
   /** Resolves to one prepared photo, or null if cancelled. */
@@ -584,11 +601,11 @@
     var valueText = fmt(value, n.unit) + (ref !== null && ref !== undefined ? ' / ' + fmt(ref, n.unit) : '') + ' ' + n.unit;
     var tag = null;
     if (status === 'over') {
-      tag = h('span', { class: 'tag over' }, 'Thừa ' + fmtAmount(key, value - range.max));
+      tag = h('span', { class: 'tag over' }, 'Over by ' + fmtAmount(key, value - range.max));
     } else if (status === 'under') {
-      tag = h('span', { class: 'tag under' }, 'Thiếu ' + fmtAmount(key, range.min - value));
+      tag = h('span', { class: 'tag under' }, 'Short by ' + fmtAmount(key, range.min - value));
     } else if (status === 'ok') {
-      tag = h('span', { class: 'tag ok' }, range.min !== null ? 'Đạt' : 'Trong giới hạn');
+      tag = h('span', { class: 'tag ok' }, range.min !== null ? 'Met' : 'Within limit');
     }
     var bar = h('div', { class: 'bar' });
     var fill = h('span');
@@ -618,9 +635,9 @@
       type: 'button',
       onclick: function () {
         microBox.hidden = !microBox.hidden;
-        toggle.textContent = microBox.hidden ? '▸ Vitamin & khoáng chất' : '▾ Ẩn vitamin & khoáng chất';
+        toggle.textContent = microBox.hidden ? '▸ Vitamins & minerals' : '▾ Hide vitamins & minerals';
       }
-    }, '▸ Vitamin & khoáng chất');
+    }, '▸ Vitamins & minerals');
     return [
       main.map(function (n) {
         return nutrientBar(n.key, totals[n.key], ranges && ranges[n.key]);
@@ -682,7 +699,8 @@
 
   // What can be logged. Energy uses MET values (Compendium of Physical Activities); counted
   // exercises (sets, skips, reps) are turned into minutes with a typical pace.
-  // Counted in times (lần: reps, skips, badminton sets) or in minutes (phút: holds, time in the sun).
+  // Counted in times (unit key 'lần': reps, skips, badminton sets) or in minutes ('phút': holds, time in
+  // the sun). The keys are Vietnamese because saved workouts store them; UNIT_TEXT shows them in English.
   var EXERCISES = [
     { id: 'skipping', name: 'Skipping (6mm Rope)', unit: 'lần', perMinute: 110, met: 11.8 },
     { id: 'sit-up', name: 'Sit-up', unit: 'lần', perMinute: 25, met: 3.8 },
@@ -700,28 +718,33 @@
     { id: 'walk-min', name: 'Walking - by minute', unit: 'phút', met: 3.5 },
     { id: 'walk-km', name: 'Walking - by kilometer', unit: 'km', minutesEach: 12, met: 3.5 },
     // Lying in the sun burns hardly more than resting (MET 1.3), so it adds almost nothing to targets.
-    { id: 'sunbath', name: 'Sunbath (tắm nắng)', unit: 'phút', met: 1.3 }
+    { id: 'sunbath', name: 'Sunbath', unit: 'phút', met: 1.3 }
   ];
   // What the amount field is called for each unit.
-  var AMOUNT_LABEL = { set: 'Số set', 'lần': 'Số lần (Times)', 'phút': 'Số phút (Minutes)', km: 'Số km (Kilometers)' };
+  var AMOUNT_LABEL = { set: 'Sets', 'lần': 'Times', 'phút': 'Minutes', km: 'Kilometers' };
+  var UNIT_TEXT = { set: 'sets', 'lần': 'times', 'phút': 'min', km: 'km' };
+
+  function unitText(unit) {
+    return UNIT_TEXT[unit] || unit;
+  }
   // Older choices, no longer offered but still needed to recompute or copy entries logged with them.
   var OLD_EXERCISES = [
     { id: 'badminton-10', name: 'Badminton Set - 10 mins', unit: 'lần', minutesEach: 10, met: 5.5 },
     { id: 'badminton-15', name: 'Badminton Set - 15 mins', unit: 'lần', minutesEach: 15, met: 5.5 },
-    { id: 'badminton-set', name: 'Cầu lông', unit: 'set', minutesEach: 12, met: 5.5 },
-    { id: 'badminton', name: 'Cầu lông', unit: 'phút', met: 5.5 },
-    { id: 'rope', name: 'Nhảy dây', unit: 'lần', perMinute: 110, met: 11.8 },
-    { id: 'pushup', name: 'Hít đất (chống đẩy)', unit: 'lần', perMinute: 25, met: 8 },
-    { id: 'situp', name: 'Gập bụng / squat', unit: 'lần', perMinute: 25, met: 5 },
-    { id: 'run', name: 'Chạy bộ', unit: 'phút', met: 8.3 },
-    { id: 'walk', name: 'Đi bộ nhanh', unit: 'phút', met: 4.3 },
-    { id: 'bike', name: 'Đạp xe', unit: 'phút', met: 7 },
-    { id: 'swim', name: 'Bơi', unit: 'phút', met: 6 },
-    { id: 'gym', name: 'Tập tạ / gym', unit: 'phút', met: 5 },
-    { id: 'football', name: 'Bóng đá', unit: 'phút', met: 7 },
+    { id: 'badminton-set', name: 'Badminton', unit: 'set', minutesEach: 12, met: 5.5 },
+    { id: 'badminton', name: 'Badminton', unit: 'phút', met: 5.5 },
+    { id: 'rope', name: 'Skipping', unit: 'lần', perMinute: 110, met: 11.8 },
+    { id: 'pushup', name: 'Push-up', unit: 'lần', perMinute: 25, met: 8 },
+    { id: 'situp', name: 'Sit-up / squat', unit: 'lần', perMinute: 25, met: 5 },
+    { id: 'run', name: 'Running', unit: 'phút', met: 8.3 },
+    { id: 'walk', name: 'Brisk walking', unit: 'phút', met: 4.3 },
+    { id: 'bike', name: 'Cycling', unit: 'phút', met: 7 },
+    { id: 'swim', name: 'Swimming', unit: 'phút', met: 6 },
+    { id: 'gym', name: 'Weights / gym', unit: 'phút', met: 5 },
+    { id: 'football', name: 'Football', unit: 'phút', met: 7 },
     { id: 'tennis', name: 'Tennis / pickleball', unit: 'phút', met: 6 },
-    { id: 'yoga', name: 'Yoga / giãn cơ', unit: 'phút', met: 2.5 },
-    { id: 'other', name: 'Môn khác (vừa sức)', unit: 'phút', met: 5 }
+    { id: 'yoga', name: 'Yoga / stretching', unit: 'phút', met: 2.5 },
+    { id: 'other', name: 'Other (moderate)', unit: 'phút', met: 5 }
   ];
   var EXERCISE_BY_ID = {};
   EXERCISES.concat(OLD_EXERCISES).forEach(function (e) {
@@ -742,13 +765,13 @@
   // afternoon about 3 µg. Scaled by the share of skin in the sun, and only the first 30 minutes
   // count, since production levels off after that. Clouds, glass and sunscreen block most of it.
   var SUN_SKIN = {
-    face: { label: 'Mặt + bàn tay', share: 0.1 },
-    arms: { label: 'Tay + chân (áo thun, quần short)', share: 0.25 },
-    most: { label: 'Phần lớn cơ thể', share: 0.6 }
+    face: { label: 'Face + hands', share: 0.1 },
+    arms: { label: 'Arms + legs (T-shirt, shorts)', share: 0.25 },
+    most: { label: 'Most of the body', share: 0.6 }
   };
   var SUN_TIME = {
-    mild: { label: 'Sáng sớm / chiều muộn', rate: 3 },
-    strong: { label: '10h–15h (nắng gắt)', rate: 10 }
+    mild: { label: 'Early morning / late afternoon', rate: 3 },
+    strong: { label: '10am–3pm (strong sun)', rate: 10 }
   };
   var SUN_MAX_MINUTES = 30;
 
@@ -822,7 +845,7 @@
 
   function exerciseForAi(exercises) {
     return exercises.map(function (e) {
-      return { name: exerciseName(e), amount: e.amount, unit: e.unit, kcal: e.kcal, vitamin_d_ug: e.vitamin_d_ug || 0 };
+      return { name: exerciseName(e), amount: e.amount, unit: unitText(e.unit), kcal: e.kcal, vitamin_d_ug: e.vitamin_d_ug || 0 };
     });
   }
 
@@ -851,10 +874,10 @@
     window.scrollTo(0, 0);
   }
 
-  // Today (or a past day from Lịch sử)
+  // Today (or a past day from History)
   function renderDay(key) {
     var isToday = key === dayKey();
-    setScreen(isToday ? 'Hôm nay · ' + dayTitle(key) : dayTitle(key), isToday ? 'today' : 'history', !isToday);
+    setScreen(isToday ? 'Today · ' + dayTitle(key) : dayTitle(key), isToday ? 'today' : 'history', !isToday);
     return Promise.all([
       Db.getAllByIndex('meals', 'day', key), Db.getKv('targets'), Db.get('plans', key),
       Db.getKv('profile'), Db.getKv('labsUpdatedAt'), Db.getAllByIndex('exercises', 'day', key)
@@ -872,29 +895,29 @@
 
       if (!profile || !targets) {
         viewEl.appendChild(h('div', { class: 'card' },
-          h('h2', null, 'Bắt đầu'),
+          h('h2', null, 'Get started'),
           h('p', { class: 'muted' }, !profile
-            ? 'Nhập hồ sơ sức khỏe (cân nặng, chiều cao, tuổi, xét nghiệm...) để ứng dụng biết bạn cần bao nhiêu mỗi chất.'
-            : 'Hồ sơ đã có. Hãy tính mục tiêu dinh dưỡng mỗi ngày của bạn.'),
-          h('a', { class: 'btn primary', href: '#profile' }, !profile ? 'Nhập hồ sơ sức khỏe' : 'Tính mục tiêu mỗi ngày')));
+            ? 'Enter your health profile (weight, height, age, lab results...) so the app knows how much of each nutrient you need.'
+            : 'Your profile is saved. Now work out your daily nutrition targets.'),
+          h('a', { class: 'btn primary', href: '#profile' }, !profile ? 'Enter health profile' : 'Work out daily targets')));
       } else if (targetsStale(targets, profile, r[4])) {
         viewEl.appendChild(h('div', { class: 'card' },
-          h('p', { class: 'muted' }, 'Hồ sơ hoặc xét nghiệm đã thay đổi. Nên tính lại mục tiêu mỗi ngày.'),
-          h('a', { class: 'btn', href: '#profile' }, 'Tính lại mục tiêu')));
+          h('p', { class: 'muted' }, 'Your profile or lab results have changed. Your daily targets should be worked out again.'),
+          h('a', { class: 'btn', href: '#profile' }, 'Recalculate targets')));
       }
 
       viewEl.appendChild(h('div', { class: 'card' },
-        h('h2', null, 'Tổng trong ngày'),
-        meals.length === 0 ? h('p', { class: 'muted' }, 'Chưa có bữa ăn nào.') : null,
-        burned && targets ? h('p', { class: 'muted small' }, '🏃 Mục tiêu đã cộng thêm ~' + burned + ' kcal nhờ tập luyện hôm nay.') : null,
-        sun ? h('p', { class: 'muted small' }, '☀️ Vitamin D đã gồm ~' + fmt(sun, 'µg') + ' µg da tự tạo khi tắm nắng.') : null,
+        h('h2', null, 'Today\'s totals'),
+        meals.length === 0 ? h('p', { class: 'muted' }, 'No meals yet.') : null,
+        burned && targets ? h('p', { class: 'muted small' }, '🏃 Targets raised by ~' + burned + ' kcal for today\'s exercise.') : null,
+        sun ? h('p', { class: 'muted small' }, '☀️ Vitamin D includes ~' + fmt(sun, 'µg') + ' µg made by your skin in the sun.') : null,
         nutrientBars(totals, targets)));
 
       if (isToday) {
         // Meals and workouts have their own tabs; today shows only a one-line count of each.
         viewEl.appendChild(h('div', { class: 'grid-2', style: 'margin:-10px 0 14px' },
-          h('a', { class: 'btn', href: '#food' }, '🍽️ ' + meals.length + ' bữa ăn'),
-          h('a', { class: 'btn', href: '#workout' }, '🏃 ' + exercises.length + ' bài tập' + (burned ? ' · ~' + burned + ' kcal' : ''))));
+          h('a', { class: 'btn', href: '#food' }, '🍽️ ' + meals.length + (meals.length === 1 ? ' meal' : ' meals')),
+          h('a', { class: 'btn', href: '#workout' }, '🏃 ' + exercises.length + (exercises.length === 1 ? ' workout' : ' workouts') + (burned ? ' · ~' + burned + ' kcal' : ''))));
         viewEl.appendChild(planCard(key, meals, totals, targets, plan, exercises));
       } else {
         viewEl.appendChild(exerciseCard(key, exercises, profile));
@@ -905,22 +928,22 @@
           onclick: function () {
             location.hash = '#add/' + key;
           }
-        }, '+ Bữa ăn'));
+        }, '+ Meal'));
       }
-      viewEl.appendChild(h('p', { class: 'disclaimer' }, 'Số liệu là ước tính của AI, không thay thế lời khuyên của bác sĩ.'));
+      viewEl.appendChild(h('p', { class: 'disclaimer' }, 'Figures are AI estimates and don\'t replace a doctor\'s advice.'));
     });
   }
 
   function mealsCard(meals, isToday) {
     return h('div', { class: 'card' },
-      h('h2', null, 'Bữa ăn (' + meals.length + ')'),
-      meals.length === 0 ? h('p', { class: 'muted' }, isToday ? 'Trước khi ăn, bấm "+ Bữa ăn" và chụp ảnh món ăn.' : 'Không có bữa ăn.') : null,
+      h('h2', null, 'Meals (' + meals.length + ')'),
+      meals.length === 0 ? h('p', { class: 'muted' }, isToday ? 'Before eating, tap "+ Meal" and take a photo of the food.' : 'No meals.') : null,
       meals.map(function (m) {
         return h('a', { class: 'meal-row', href: '#meal/' + m.id },
           m.thumb ? h('img', { class: 'thumb', src: m.thumb, alt: '' }) : h('div', { class: 'thumb' }, '🍽️'),
           h('div', { class: 'info' },
             h('div', { class: 'name' }, m.name),
-            h('div', { class: 'muted small' }, m.time + (m.portion !== 1 ? ' · ' + Math.round(m.portion * 100) + '% phần' : ''))),
+            h('div', { class: 'muted small' }, m.time + (m.portion !== 1 ? ' · ' + Math.round(m.portion * 100) + '% portion' : ''))),
           h('div', { class: 'kcal' }, fmt(m.nutrients.energy_kcal, 'kcal') + ' kcal'));
       }));
   }
@@ -940,7 +963,7 @@
         onclick: function () {
           location.hash = '#add';
         }
-      }, '+ Bữa ăn'));
+      }, '+ Meal'));
     });
   }
 
@@ -964,17 +987,17 @@
   function exerciseCard(key, exercises, profile) {
     var weight = profile && profile.weight_kg;
     var burned = exerciseTotal(exercises);
-    var card = h('div', { class: 'card' }, h('h2', null, '🏃 Tập luyện' + (exercises.length ? ' (~' + burned + ' kcal)' : '')));
+    var card = h('div', { class: 'card' }, h('h2', null, '🏃 Exercise' + (exercises.length ? ' (~' + burned + ' kcal)' : '')));
 
     if (exercises.length) {
       card.appendChild(h('div', null, exercises.map(function (e) {
         var row = h('div', { class: 'ex-row' },
-          h('span', { class: 'name' }, exerciseName(e) + ' · ' + e.amount + ' ' + e.unit,
+          h('span', { class: 'name' }, exerciseName(e) + ' · ' + e.amount + ' ' + unitText(e.unit),
             e.vitamin_d_ug ? h('div', { class: 'muted small' }, '☀️ ~' + fmt(e.vitamin_d_ug, 'µg') + ' µg vitamin D · ' + (SUN_SKIN[e.sunSkin] || SUN_SKIN.arms).label.toLowerCase() + ', ' + (SUN_TIME[e.sunTime] || SUN_TIME.mild).label.toLowerCase()) : null),
           h('span', { class: 'kcal' }, '~' + e.kcal + ' kcal'),
           h('button', {
             type: 'button',
-            'aria-label': 'Xóa ' + exerciseName(e),
+            'aria-label': 'Delete ' + exerciseName(e),
             onclick: function () {
               Db.remove('exercises', e.id).then(rerenderKeepingScroll);
             }
@@ -991,9 +1014,9 @@
         });
         return wrap;
       })));
-      card.appendChild(h('p', { class: 'muted small' }, 'Giữ một bài tập 0,5 giây để cộng thêm số lần / số phút.'));
+      card.appendChild(h('p', { class: 'muted small' }, 'Hold an exercise for 0.5 s to add more times / minutes.'));
     } else {
-      card.appendChild(h('p', { class: 'muted' }, 'Hôm nay chưa tập? Nếu có tập, thêm vào đây để mục tiêu năng lượng của ngày tăng theo.'));
+      card.appendChild(h('p', { class: 'muted' }, 'No exercise yet today? Add it here and the day\'s energy target goes up to match.'));
     }
 
     function addExercise(ex, amount) {
@@ -1026,15 +1049,15 @@
     var timeSelect = h('select', null, sunOptions(SUN_TIME, 'mild'));
     var sunBox = h('div', { hidden: true },
       h('div', { class: 'grid-2' },
-        h('label', { class: 'field' }, 'Phần da để nắng', skinSelect),
-        h('label', { class: 'field' }, 'Giờ tắm nắng', timeSelect)),
-      h('p', { class: 'muted small', style: 'margin-top:-6px' }, 'Không bôi kem chống nắng, không qua kính; trời nhiều mây thì da tạo ít hơn.'));
+        h('label', { class: 'field' }, 'Skin in the sun', skinSelect),
+        h('label', { class: 'field' }, 'Time of day', timeSelect)),
+      h('p', { class: 'muted small', style: 'margin-top:-6px' }, 'No sunscreen, not through glass; heavy cloud means the skin makes less.'));
 
     var typeSelect = h('select', { name: 'type' }, EXERCISES.map(function (e) {
       return h('option', { value: e.id }, e.name);
     }));
-    var amountInput = h('input', { name: 'amount', type: 'number', inputmode: 'decimal', min: '0', step: 'any', placeholder: 'VD: 20' });
-    var unitLabel = h('span', null, 'Số lần (Times)');
+    var amountInput = h('input', { name: 'amount', type: 'number', inputmode: 'decimal', min: '0', step: 'any', placeholder: 'e.g. 20' });
+    var unitLabel = h('span', null, 'Times');
     var preview = h('p', { class: 'muted small' }, '');
     function update() {
       var ex = EXERCISE_BY_ID[typeSelect.value];
@@ -1045,14 +1068,14 @@
       if (isSun) {
         var d = amount > 0 ? sunVitaminD(amount, skinSelect.value, timeSelect.value) : 0;
         preview.textContent = amount > 0
-          ? '☀️ Da tạo khoảng ' + fmt(d, 'µg') + ' µg vitamin D (~' + Math.round(d * 40) + ' IU)'
-            + (amount > SUN_MAX_MINUTES ? ' — chỉ tính ' + SUN_MAX_MINUTES + ' phút đầu, sau đó da gần như không tạo thêm' : '') + '.'
+          ? '☀️ Your skin makes about ' + fmt(d, 'µg') + ' µg vitamin D (~' + Math.round(d * 40) + ' IU)'
+            + (amount > SUN_MAX_MINUTES ? ' — only the first ' + SUN_MAX_MINUTES + ' minutes count; after that the skin makes almost no more' : '') + '.'
           : '';
         return;
       }
       preview.textContent = amount > 0
-        ? '≈ ' + Math.round(exerciseMinutes(ex, amount)) + ' phút, tiêu hao thêm ~' + exerciseKcal(ex, amount, weight) + ' kcal'
-          + (weight ? '' : ' (tính theo ' + DEFAULT_WEIGHT_KG + ' kg — nhập cân nặng trong Hồ sơ để chính xác hơn)')
+        ? '≈ ' + Math.round(exerciseMinutes(ex, amount)) + ' min, burns an extra ~' + exerciseKcal(ex, amount, weight) + ' kcal'
+          + (weight ? '' : ' (based on ' + DEFAULT_WEIGHT_KG + ' kg — enter your weight in Profile to be more accurate)')
         : '';
     }
     typeSelect.addEventListener('change', update);
@@ -1062,16 +1085,16 @@
 
     var form = h('form', { hidden: true, novalidate: true },
       h('div', { class: 'grid-2' },
-        h('label', { class: 'field' }, 'Môn', typeSelect),
+        h('label', { class: 'field' }, 'Exercise', typeSelect),
         h('label', { class: 'field' }, unitLabel, amountInput)),
       sunBox,
       preview,
-      h('button', { class: 'btn primary', type: 'submit' }, 'Thêm'));
+      h('button', { class: 'btn primary', type: 'submit' }, 'Add'));
     form.addEventListener('submit', function (e) {
       e.preventDefault();
       var amount = parseFloat(amountInput.value);
       if (!(amount > 0)) {
-        alert('Hãy nhập ' + AMOUNT_LABEL[EXERCISE_BY_ID[typeSelect.value].unit].toLowerCase() + '.');
+        alert('Please enter the ' + AMOUNT_LABEL[EXERCISE_BY_ID[typeSelect.value].unit].toLowerCase() + '.');
         return;
       }
       addExercise(EXERCISE_BY_ID[typeSelect.value], amount).then(rerenderKeepingScroll);
@@ -1090,7 +1113,7 @@
           // Older WebViews can't open a dropdown from code; it stays focused for a tap.
         }
       }
-    }, '+ Thêm bài tập');
+    }, '+ Add exercise');
     card.appendChild(showForm);
     card.appendChild(form);
     return card;
@@ -1177,14 +1200,14 @@
       return parseFloat(input.value.replace(',', '.'));
     }
     // Starts with the number added last time (or the first amount logged), since sets usually repeat.
-    var input = h('input', { type: 'text', inputmode: 'decimal', placeholder: 'VD: 20' });
+    var input = h('input', { type: 'text', inputmode: 'decimal', placeholder: 'e.g. 20' });
     input.value = String(e.lastAdded || e.amount);
     var preview = h('p', { class: 'muted small' }, '');
     function update() {
       var amount = typed();
       if (amount > 0) {
         var t = totalFor(amount);
-        preview.textContent = 'Tổng: ' + e.amount + ' + ' + amount + ' = ' + t.amount + ' ' + e.unit + ', ~' + t.kcal + ' kcal'
+        preview.textContent = 'Total: ' + e.amount + ' + ' + amount + ' = ' + t.amount + ' ' + unitText(e.unit) + ', ~' + t.kcal + ' kcal'
           + (t.vitamin_d_ug !== undefined ? ', ☀️ ~' + fmt(t.vitamin_d_ug, 'µg') + ' µg vitamin D' : '');
       } else {
         preview.textContent = '';
@@ -1193,22 +1216,22 @@
     input.addEventListener('input', update);
     update();
     var form = h('form', { class: 'ex-more', novalidate: true },
-      h('label', { class: 'field' }, 'Thêm ' + (AMOUNT_LABEL[e.unit] || 'Số lần').toLowerCase() + ' cho ' + exerciseName(e), input),
+      h('label', { class: 'field' }, 'Add ' + (AMOUNT_LABEL[e.unit] || 'Times').toLowerCase() + ' to ' + exerciseName(e), input),
       preview,
       h('div', { class: 'grid-2' },
-        h('button', { class: 'btn primary', type: 'submit' }, 'Cộng thêm'),
+        h('button', { class: 'btn primary', type: 'submit' }, 'Add'),
         h('button', {
           class: 'btn',
           type: 'button',
           onclick: function () {
             form.remove();
           }
-        }, 'Hủy')));
+        }, 'Cancel')));
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
       var amount = typed();
       if (!(amount > 0)) {
-        alert('Hãy nhập số muốn cộng thêm.');
+        alert('Please enter the amount to add.');
         return;
       }
       Db.put('exercises', Object.assign({}, e, totalFor(amount), { lastAdded: amount })).then(rerenderKeepingScroll);
@@ -1217,32 +1240,32 @@
   }
 
   function planCard(key, meals, totals, targets, plan, exercises) {
-    var card = h('div', { class: 'card' }, h('h2', null, '🤖 Nên ăn gì tiếp hôm nay?'));
+    var card = h('div', { class: 'card' }, h('h2', null, '🤖 What to eat next today?'));
     var burned = exerciseTotal(exercises);
     var newMeals = plan && plan.mealCount !== meals.length;
     var stale = plan && (newMeals || (plan.exerciseKcal || 0) !== burned);
     if (plan) {
       var r = plan.result;
       card.appendChild(h('p', { class: 'muted small' },
-        'Cập nhật lúc ' + plan.time + ' (sau ' + plan.mealCount + ' bữa)'
-        + (stale ? ' · ' + (newMeals ? 'đã có bữa mới' : 'tập luyện đã thay đổi') + ', nên cập nhật' : '')));
+        'Updated at ' + plan.time + ' (after ' + plan.mealCount + (plan.mealCount === 1 ? ' meal)' : ' meals)')
+        + (stale ? ' · ' + (newMeals ? 'new meals since' : 'exercise has changed') + ', worth updating' : '')));
       card.appendChild(h('p', null, r.summary));
       if (r.lacking.length) {
-        card.appendChild(h('h3', null, 'Còn thiếu'));
+        card.appendChild(h('h3', null, 'Still short'));
         card.appendChild(h('ul', { class: 'items' }, r.lacking.map(function (x) {
           var n = NUTRIENT_BY_KEY[x.nutrient_key];
           return h('li', null, h('strong', null, (n ? n.name : x.nutrient_key) + ': ' + fmtAmount(x.nutrient_key, x.amount_left)), ' — ' + x.note);
         })));
       }
       if (r.excess.length) {
-        card.appendChild(h('h3', null, 'Đã nhiều / cần tránh'));
+        card.appendChild(h('h3', null, 'Already high / avoid'));
         card.appendChild(h('ul', { class: 'items' }, r.excess.map(function (x) {
           var n = NUTRIENT_BY_KEY[x.nutrient_key];
-          return h('li', null, h('strong', null, (n ? n.name : x.nutrient_key) + (x.over_by > 0 ? ': vượt ' + fmtAmount(x.nutrient_key, x.over_by) : '')), ' — ' + x.note);
+          return h('li', null, h('strong', null, (n ? n.name : x.nutrient_key) + (x.over_by > 0 ? ': over by ' + fmtAmount(x.nutrient_key, x.over_by) : '')), ' — ' + x.note);
         })));
       }
       if (r.plan.length) {
-        card.appendChild(h('h3', null, 'Gợi ý cho phần còn lại của ngày'));
+        card.appendChild(h('h3', null, 'Ideas for the rest of the day'));
         r.plan.forEach(function (p) {
           card.appendChild(h('div', { class: 'plan-meal' },
             h('strong', null, p.meal),
@@ -1253,24 +1276,24 @@
         });
       }
       if (r.tips.length) {
-        card.appendChild(h('h3', null, 'Lưu ý'));
+        card.appendChild(h('h3', null, 'Notes'));
         card.appendChild(h('ul', { class: 'items' }, r.tips.map(function (t) {
           return h('li', null, t);
         })));
       }
     } else {
-      card.appendChild(h('p', { class: 'muted' }, 'Claude xem những gì bạn đã ăn hôm nay, cho biết chất nào còn thiếu hoặc đã quá nhiều, và gợi ý nên ăn gì cho phần còn lại của ngày.'));
+      card.appendChild(h('p', { class: 'muted' }, 'The AI looks at what you\'ve eaten today, tells you which nutrients are short or already too high, and suggests what to eat for the rest of the day.'));
     }
     function savePlan(result) {
       return Db.put('plans', { day: key, time: timeLabel(), mealCount: meals.length, exerciseKcal: burned, result: result }).then(route);
     }
-    card.appendChild(askButtons('plan', plan ? 'Cập nhật gợi ý' : 'Phân tích & gợi ý', function () {
+    card.appendChild(askButtons('plan', plan ? 'Update suggestions' : 'Analyze & suggest', function () {
       if (!targets) {
-        alert('Hãy tính mục tiêu mỗi ngày trong Hồ sơ trước.');
+        alert('Please work out your daily targets in Profile first.');
         location.hash = '#profile';
         return;
       }
-      askClaude('plan', 'Claude đang lên kế hoạch cho phần còn lại của ngày...', function (profile, labs) {
+      askClaude('plan', 'Claude is planning the rest of your day...', function (profile, labs) {
         return {
           profile: profile,
           labs: labs,
@@ -1281,7 +1304,7 @@
               name: m.name,
               items: m.items.map(function (i) {
                 return i.name + ' (' + i.portion + ')';
-              }).join(', ') + (m.portion !== 1 ? ' — ăn ' + Math.round(m.portion * 100) + '% phần' : '')
+              }).join(', ') + (m.portion !== 1 ? ' — ate ' + Math.round(m.portion * 100) + '% of it' : '')
             };
           }),
           totals: roundAll(totals),
@@ -1314,21 +1337,21 @@
   }
 
   function renderAdd() {
-    setScreen('Thêm bữa ăn', 'food', true);
+    setScreen('Add meal', 'food', true);
     if (!pending) {
       pending = newPendingMeal();
     }
     var p = pending;
     var mealDay = pendingDay(p);
     if (mealDay !== dayKey()) {
-      titleEl.textContent = 'Thêm bữa ăn · ' + dayTitle(mealDay);
+      titleEl.textContent = 'Add meal · ' + dayTitle(mealDay);
     }
 
     var photoBox = h('button', {
       class: 'photo-box',
       type: 'button',
       onclick: function () {
-        pickPhoto('Ảnh bữa ăn').then(function (photo) {
+        pickPhoto('Meal photo').then(function (photo) {
           if (photo) {
             p.photo = photo;
             p.result = null;
@@ -1337,10 +1360,10 @@
           }
         });
       }
-    }, p.photo ? h('img', { src: p.photo.preview, alt: 'Ảnh bữa ăn' }) : '📷 Bấm để chụp ảnh bữa ăn');
+    }, p.photo ? h('img', { src: p.photo.preview, alt: 'Meal photo' }) : '📷 Tap to take a photo of your meal');
 
     var noteInput = h('textarea', {
-      placeholder: 'VD: 1 tô phở bò tái, không ăn hết nước; 1 ly trà đá',
+      placeholder: 'e.g. 1 bowl of rare beef pho, didn\'t finish the broth; 1 glass of iced tea',
       oninput: function () {
         p.note = noteInput.value;
       }
@@ -1367,17 +1390,17 @@
       storePendingMeal();
     });
     viewEl.appendChild(h('div', { class: 'grid-2', style: 'margin-top:12px' },
-      h('label', { class: 'field' }, 'Ngày ăn', dayInput),
-      h('label', { class: 'field' }, 'Giờ', timeInput)));
+      h('label', { class: 'field' }, 'Date eaten', dayInput),
+      h('label', { class: 'field' }, 'Time', timeInput)));
     if (mealDay !== dayKey()) {
-      viewEl.appendChild(h('p', { class: 'muted small', style: 'margin-top:-6px' }, '📅 Bữa này sẽ được ghi vào ' + dayTitle(mealDay) + '.'));
+      viewEl.appendChild(h('p', { class: 'muted small', style: 'margin-top:-6px' }, '📅 This meal will be saved to ' + dayTitle(mealDay) + '.'));
     }
-    viewEl.appendChild(h('label', { class: 'field' }, 'Ghi chú (không bắt buộc — món gì, bao nhiêu, cách nấu)', noteInput));
+    viewEl.appendChild(h('label', { class: 'field' }, 'Note (optional — what it is, how much, how it was cooked)', noteInput));
 
     if (!p.result) {
-      viewEl.appendChild(askButtons('meal', '🔍 Phân tích bữa ăn', analyze, showMealResult, true));
+      viewEl.appendChild(askButtons('meal', '🔍 Analyze meal', analyze, showMealResult, true));
       if (isDirect(askMode())) {
-        viewEl.appendChild(h('p', { class: 'muted small' }, 'AI ước tính món, khối lượng và chất dinh dưỡng. Mất khoảng 10–60 giây.'));
+        viewEl.appendChild(h('p', { class: 'muted small' }, 'The AI estimates the foods, amounts and nutrients. Takes about 10–60 seconds.'));
       }
       return;
     }
@@ -1394,17 +1417,17 @@
           analyze();
         }
       }
-    }, 'Phân tích lại'));
+    }, 'Analyze again'));
 
     var r = p.result;
     if (!r.is_food) {
       viewEl.appendChild(h('div', { class: 'card' },
-        h('p', null, 'Ảnh này có vẻ không phải đồ ăn. Hãy chụp lại món ăn, hoặc ghi rõ món trong ghi chú.'),
+        h('p', null, 'This photo doesn\'t look like food. Take another photo of the meal, or describe it in the note.'),
         h('p', { class: 'muted small' }, r.comment)));
       return;
     }
 
-    var portionChoices = [[0.5, '½'], [0.75, '¾'], [1, 'Cả phần'], [1.25, '1¼'], [1.5, '1½']];
+    var portionChoices = [[0.5, '½'], [0.75, '¾'], [1, 'All'], [1.25, '1¼'], [1.5, '1½']];
     var scaled = scaleNutrients(r.nutrients, p.portion);
 
     Promise.all([
@@ -1425,11 +1448,11 @@
 
       var card = h('div', { class: 'card' },
         h('h2', null, r.meal_name),
-        h('p', { class: 'muted small' }, 'Độ chắc chắn: ' + ({ low: 'thấp', medium: 'trung bình', high: 'cao' })[r.confidence]),
+        h('p', { class: 'muted small' }, 'Confidence: ' + ({ low: 'low', medium: 'medium', high: 'high' })[r.confidence]),
         h('ul', { class: 'items' }, r.items.map(function (i) {
           return h('li', null, i.name + ' — ' + i.portion + ' (~' + fmt(i.grams, 'g') + ' g)');
         })),
-        h('h3', null, 'Bạn sẽ ăn bao nhiêu?'),
+        h('h3', null, 'How much will you eat?'),
         h('div', { class: 'portion-choices' }, portionChoices.map(function (c) {
           return h('button', {
             type: 'button',
@@ -1441,12 +1464,12 @@
             }
           }, c[1]);
         })),
-        h('h3', null, 'Dinh dưỡng (phần bạn ăn)'),
-        targets ? h('p', { class: 'muted small' }, '% = phần bữa này đáp ứng so với nhu cầu mỗi ngày (chất cần hạn chế: so với mức tối đa).') : null,
+        h('h3', null, 'Nutrition (your portion)'),
+        targets ? h('p', { class: 'muted small' }, '% = how much of your daily need this meal covers (for nutrients to limit: of the daily maximum).') : null,
         h('table', { class: 'simple' }, h('tbody', null, nutrientRows(
           ['energy_kcal', 'protein_g', 'carbs_g', 'sugar_g', 'fat_g', 'sat_fat_g', 'cholesterol_mg', 'fiber_g', 'sodium_mg', 'purine_mg'],
           scaled, r.items, p.portion, targets && targets.targets))),
-        h('h3', null, 'Vitamin & khoáng chất'),
+        h('h3', null, 'Vitamins & minerals'),
         h('table', { class: 'simple' }, h('tbody', null, nutrientRows(
           NUTRIENTS.filter(function (n) {
             return n.group === 'micro';
@@ -1458,10 +1481,10 @@
         r.warnings.map(function (w) {
           return h('div', { class: 'warning' }, '⚠️ ' + w);
         }),
-        overAfter.length ? h('div', { class: 'warning' }, '📈 Sau bữa này, hôm nay sẽ vượt mức: ' + overAfter.join(', ')) : null);
+        overAfter.length ? h('div', { class: 'warning' }, '📈 After this meal, today will be over the limit for: ' + overAfter.join(', ')) : null);
       viewEl.appendChild(card);
 
-      viewEl.appendChild(h('button', { class: 'btn primary', type: 'button', onclick: saveMeal }, '✅ Lưu — tôi sẽ ăn bữa này'));
+      viewEl.appendChild(h('button', { class: 'btn primary', type: 'button', onclick: saveMeal }, '✅ Save — I\'ll eat this'));
       viewEl.appendChild(h('div', { class: 'btn-row' },
         h('button', {
           class: 'btn danger',
@@ -1470,7 +1493,7 @@
             clearPendingMeal();
             location.hash = afterMealHash(mealDay);
           }
-        }, 'Bỏ')));
+        }, 'Discard')));
     });
 
     function saveMeal() {
@@ -1501,7 +1524,7 @@
         clearPendingMeal();
         location.hash = afterMealHash(mealDay);
       }, function (err) {
-        alert('Không lưu được: ' + err.message);
+        alert('Could not save: ' + err.message);
       });
     }
   }
@@ -1532,13 +1555,13 @@
   function analyze() {
     var p = pending;
     if (!p.photo && !p.note.trim()) {
-      alert('Hãy chụp ảnh bữa ăn hoặc ghi chú món ăn.');
+      alert('Please take a photo of the meal or describe it in the note.');
       return;
     }
     storePendingMeal();
     var day = pendingDay(p);
     Promise.all([Db.getAllByIndex('meals', 'day', day), Db.getAllByIndex('exercises', 'day', day)]).then(function (today) {
-      return askClaude('meal', 'Claude đang xem bữa ăn...', function (profile, labs) {
+      return askClaude('meal', 'Claude is looking at your meal...', function (profile, labs) {
         return {
           imageBase64: p.photo ? p.photo.base64 : null,
           note: p.note.trim(),
@@ -1558,12 +1581,12 @@
 
   // One saved meal
   function renderMeal(id) {
-    setScreen('Bữa ăn', 'food', true);
+    setScreen('Meal', 'food', true);
     return Promise.all([Db.get('meals', id), Db.get('photos', id)]).then(function (r) {
       var m = r[0];
       var photo = r[1];
       if (!m) {
-        viewEl.appendChild(h('p', { class: 'empty' }, 'Không tìm thấy bữa ăn này.'));
+        viewEl.appendChild(h('p', { class: 'empty' }, 'This meal wasn\'t found.'));
         return;
       }
       titleEl.textContent = m.name;
@@ -1571,35 +1594,35 @@
       viewEl.appendChild(h('div', { class: 'card' },
         image ? h('img', { src: image, alt: '', style: 'width:100%;border-radius:10px;margin-bottom:6px' }) : null,
         m.thumb ? h('p', { class: 'muted small', style: 'margin-top:0' }, photo
-          ? 'Ảnh gốc được giữ ' + PHOTO_KEEP_DAYS + ' ngày, sau đó chỉ còn ảnh nhỏ.'
-          : 'Ảnh gốc đã quá ' + PHOTO_KEEP_DAYS + ' ngày nên chỉ còn ảnh nhỏ.') : null,
-        h('p', { class: 'muted small' }, dayTitle(m.day) + ' · ' + m.time + (m.portion !== 1 ? ' · ăn ' + Math.round(m.portion * 100) + '% phần' : '')),
+          ? 'The full photo is kept for ' + PHOTO_KEEP_DAYS + ' days, then only the small one remains.'
+          : 'The full photo is older than ' + PHOTO_KEEP_DAYS + ' days, so only the small one remains.') : null,
+        h('p', { class: 'muted small' }, dayTitle(m.day) + ' · ' + m.time + (m.portion !== 1 ? ' · ate ' + Math.round(m.portion * 100) + '%' : '')),
         h('ul', { class: 'items' }, m.items.map(function (i) {
           return h('li', null, i.name + ' — ' + i.portion + ' (~' + fmt(i.grams, 'g') + ' g)');
         })),
-        m.note ? h('p', { class: 'muted small' }, 'Ghi chú: ' + m.note) : null,
+        m.note ? h('p', { class: 'muted small' }, 'Note: ' + m.note) : null,
         h('p', null, m.comment),
         (m.warnings || []).map(function (w) {
           return h('div', { class: 'warning' }, '⚠️ ' + w);
         })));
-      viewEl.appendChild(h('div', { class: 'card' }, h('h2', null, 'Dinh dưỡng'), nutrientTable(m.nutrients, m.items, m.portion)));
+      viewEl.appendChild(h('div', { class: 'card' }, h('h2', null, 'Nutrition'), nutrientTable(m.nutrients, m.items, m.portion)));
       viewEl.appendChild(h('button', {
         class: 'btn danger',
         type: 'button',
         onclick: function () {
-          if (confirm('Xóa bữa ăn "' + m.name + '"?')) {
+          if (confirm('Delete the meal "' + m.name + '"?')) {
             Promise.all([Db.remove('meals', m.id), Db.remove('photos', m.id)]).then(function () {
               history.back();
             });
           }
         }
-      }, '🗑️ Xóa bữa ăn'));
+      }, '🗑️ Delete meal'));
     });
   }
 
   // Past days
   function renderHistory() {
-    setScreen('Lịch sử', 'history', false);
+    setScreen('History', 'history', false);
     return Promise.all([Db.getAll('meals'), Db.getKv('targets'), Db.getAll('exercises')]).then(function (r) {
       var byDay = {};
       r[0].forEach(function (m) {
@@ -1611,7 +1634,7 @@
       });
       var days = Object.keys(Object.assign({}, exerciseByDay, byDay)).sort().reverse();
       if (days.length === 0) {
-        viewEl.appendChild(h('p', { class: 'empty' }, 'Chưa có dữ liệu.'));
+        viewEl.appendChild(h('p', { class: 'empty' }, 'No data yet.'));
         return;
       }
       viewEl.appendChild(summaryPicker(addDays(dayKey(), -6), dayKey(), days[days.length - 1]));
@@ -1628,7 +1651,7 @@
           h('div', { class: 'thumb' }, '📅'),
           h('div', { class: 'info' },
             h('div', { class: 'name' }, dayTitle(day)),
-            h('div', { class: 'muted small' }, meals.length + ' bữa' + (burned ? ' · 🏃 ~' + burned + ' kcal' : '') + (over.length ? ' · vượt: ' + over.map(function (n) {
+            h('div', { class: 'muted small' }, meals.length + (meals.length === 1 ? ' meal' : ' meals') + (burned ? ' · 🏃 ~' + burned + ' kcal' : '') + (over.length ? ' · over: ' + over.map(function (n) {
               return n.name;
             }).join(', ') : ''))),
           h('div', { class: 'kcal' }, fmt(totals.energy_kcal, 'kcal') + ' kcal'));
@@ -1636,7 +1659,7 @@
     });
   }
 
-  // ---- Tổng kết: everything logged in a chosen period, added up ----
+  // ---- Summary: everything logged in a chosen period, added up ----
 
   function addDays(key, n) {
     var p = key.split('-');
@@ -1650,7 +1673,7 @@
     return Math.round((Date.UTC(+b[0], +b[1] - 1, +b[2]) - Date.UTC(+a[0], +a[1] - 1, +a[2])) / 864e5) + 1;
   }
 
-  /** The "Tổng kết" card: a period (from / to, or a quick choice) and a button to add it up. */
+  /** The "Summary" card: a period (from / to, or a quick choice) and a button to add it up. */
   function summaryPicker(from, to, firstDay) {
     var fromInput = h('input', { type: 'date', max: dayKey() });
     var toInput = h('input', { type: 'date', max: dayKey() });
@@ -1658,7 +1681,7 @@
     toInput.value = to;
     function show(f, t) {
       if (!f || !t) {
-        alert('Hãy chọn ngày bắt đầu và ngày kết thúc.');
+        alert('Please choose a start date and an end date.');
         return;
       }
       location.hash = '#summary/' + (f <= t ? f + '/' + t : t + '/' + f);
@@ -1673,23 +1696,23 @@
     }
     var today = dayKey();
     return h('div', { class: 'card' },
-      h('h2', null, '📊 Tổng kết'),
-      h('p', { class: 'muted small' }, 'Cộng tất cả bữa ăn và bài tập trong khoảng thời gian bạn chọn.'),
+      h('h2', null, '📊 Summary'),
+      h('p', { class: 'muted small' }, 'Adds up all meals and exercise in the period you choose.'),
       h('div', { class: 'portion-choices' },
-        quick('7 ngày', addDays(today, -6), today),
-        quick('30 ngày', addDays(today, -29), today),
-        quick('Tháng này', today.slice(0, 8) + '01', today),
-        quick('Tất cả', firstDay || today, today)),
+        quick('7 days', addDays(today, -6), today),
+        quick('30 days', addDays(today, -29), today),
+        quick('This month', today.slice(0, 8) + '01', today),
+        quick('All', firstDay || today, today)),
       h('div', { class: 'grid-2' },
-        h('label', { class: 'field' }, 'Từ ngày', fromInput),
-        h('label', { class: 'field' }, 'Đến ngày', toInput)),
+        h('label', { class: 'field' }, 'From', fromInput),
+        h('label', { class: 'field' }, 'To', toInput)),
       h('button', {
         class: 'btn primary',
         type: 'button',
         onclick: function () {
           show(fromInput.value, toInput.value);
         }
-      }, 'Xem tổng kết'));
+      }, 'Show summary'));
   }
 
   var SUMMARY_MARK = { ok: '✅ ', under: '⬇️ ', over: '⬆️ ' };
@@ -1742,7 +1765,7 @@
       to = dayKey();
       from = addDays(to, -6);
     }
-    setScreen('Tổng kết', 'history', true);
+    setScreen('Summary', 'history', true);
     var range = IDBKeyRange.bound(from, to);
     return Promise.all([
       Db.getAllByIndex('meals', 'day', range), Db.getAllByIndex('exercises', 'day', range), Db.getAll('meals'),
@@ -1777,23 +1800,23 @@
       viewEl.appendChild(h('div', { class: 'card' },
         h('h2', null, (from === to ? dayTitle(from) : dayTitle(from) + ' → ' + dayTitle(to))),
         h('ul', { class: 'items' },
-          h('li', null, calendarDays + ' ngày; có ghi bữa ăn ' + mealDays + ' ngày'),
-          h('li', null, meals.length + ' bữa ăn'),
-          h('li', null, exercises.length + ' lần ghi bài tập trong ' + workoutDays + ' ngày, tiêu hao thêm ~' + burned + ' kcal')),
+          h('li', null, calendarDays + (calendarDays === 1 ? ' day' : ' days') + '; meals logged on ' + mealDays + (mealDays === 1 ? ' day' : ' days')),
+          h('li', null, meals.length + (meals.length === 1 ? ' meal' : ' meals')),
+          h('li', null, exercises.length + ' exercise entries on ' + workoutDays + (workoutDays === 1 ? ' day' : ' days') + ', burning an extra ~' + burned + ' kcal')),
         mealDays < calendarDays && meals.length
-          ? h('p', { class: 'muted small' }, 'Trung bình mỗi ngày được tính trên ' + mealDays + ' ngày có ghi bữa ăn (ngày không ghi có thể là quên ghi).')
+          ? h('p', { class: 'muted small' }, 'Daily averages are over the ' + mealDays + (mealDays === 1 ? ' day' : ' days') + ' with meals logged (a day with nothing logged was probably just forgotten).')
           : null));
 
       if (!meals.length && !exercises.length) {
-        viewEl.appendChild(h('p', { class: 'empty' }, 'Không có dữ liệu trong khoảng thời gian này.'));
+        viewEl.appendChild(h('p', { class: 'empty' }, 'No data in this period.'));
         return;
       }
 
       if (meals.length) {
-        var sections = [['main', 'Dinh dưỡng chính'], ['micro', 'Vitamin & khoáng chất']];
+        var sections = [['main', 'Main nutrients'], ['micro', 'Vitamins & minerals']];
         var count = { ok: 0, under: 0, over: 0 };
         var table = h('table', { class: 'simple summary' },
-          h('thead', null, h('tr', null, h('th', null, 'Chất'), h('th', null, 'Tổng'), h('th', null, 'Cần'), h('th', null, 'TB/ngày'))),
+          h('thead', null, h('tr', null, h('th', null, 'Nutrient'), h('th', null, 'Total'), h('th', null, 'Need'), h('th', null, 'Avg/day'))),
           sections.map(function (sec) {
             return h('tbody', null,
               h('tr', { class: 'section' }, h('td', { colspan: '4' }, sec[1])),
@@ -1813,15 +1836,15 @@
               }));
           }));
         viewEl.appendChild(h('div', { class: 'card' },
-          h('h2', null, '🍽️ Tổng dinh dưỡng'),
+          h('h2', null, '🍽️ Total nutrition'),
           need
-            ? h('p', { class: 'muted small' }, '"Cần" là nhu cầu của ' + mealDays + ' ngày có ghi bữa ăn, theo mục tiêu mỗi ngày trong Hồ sơ'
-              + (exercises.length ? ' (đã cộng thêm cho những ngày có tập)' : '') + '. ✅ đủ · ⬇️ thiếu · ⬆️ vượt.')
-            : h('p', { class: 'muted small' }, 'Chưa có mục tiêu mỗi ngày nên chưa so được với nhu cầu. Tính mục tiêu trong Hồ sơ.'),
+            ? h('p', { class: 'muted small' }, '"Need" is what your body needed over the ' + mealDays + (mealDays === 1 ? ' day' : ' days') + ' with meals logged, from the daily targets in Profile'
+              + (exercises.length ? ' (raised for the days with exercise)' : '') + '. ✅ enough · ⬇️ short · ⬆️ over.')
+            : h('p', { class: 'muted small' }, 'No daily targets yet, so there is nothing to compare with. Work out your targets in Profile.'),
           need ? h('div', { class: 'summary-tags' },
-            h('span', { class: 'tag ok' }, '✅ Đủ: ' + count.ok),
-            h('span', { class: 'tag under' }, '⬇️ Thiếu: ' + count.under),
-            h('span', { class: 'tag over' }, '⬆️ Vượt: ' + count.over)) : null,
+            h('span', { class: 'tag ok' }, '✅ Enough: ' + count.ok),
+            h('span', { class: 'tag under' }, '⬇️ Short: ' + count.under),
+            h('span', { class: 'tag over' }, '⬆️ Over: ' + count.over)) : null,
           table));
       }
 
@@ -1841,14 +1864,14 @@
           return b.kcal - a.kcal;
         });
         viewEl.appendChild(h('div', { class: 'card' },
-          h('h2', null, '🏃 Tổng bài tập (~' + burned + ' kcal)'),
+          h('h2', null, '🏃 Total exercise (~' + burned + ' kcal)'),
           h('table', { class: 'simple' }, h('tbody', null, rows.map(function (x) {
             return h('tr', null,
-              h('td', null, x.name, h('div', { class: 'muted small' }, Object.keys(x.days).length + ' ngày · ~' + Math.round(x.kcal) + ' kcal')),
-              h('td', null, Math.round(x.amount * 100) / 100 + ' ' + x.unit));
+              h('td', null, x.name, h('div', { class: 'muted small' }, Object.keys(x.days).length + (Object.keys(x.days).length === 1 ? ' day' : ' days') + ' · ~' + Math.round(x.kcal) + ' kcal')),
+              h('td', null, Math.round(x.amount * 100) / 100 + ' ' + unitText(x.unit)));
           })))));
       }
-      viewEl.appendChild(h('p', { class: 'disclaimer' }, 'Số liệu là ước tính của AI, không thay thế lời khuyên của bác sĩ.'));
+      viewEl.appendChild(h('p', { class: 'disclaimer' }, 'Figures are AI estimates and don\'t replace a doctor\'s advice.'));
     });
   }
 
@@ -1873,7 +1896,7 @@
   function addLabPhotos(photos) {
     var room = MAX_LAB_PHOTOS - labPhotos.length;
     if (photos.length > room) {
-      alert('Mỗi lần đọc tối đa ' + MAX_LAB_PHOTOS + ' ảnh. Chỉ lấy ' + room + ' ảnh đầu.');
+      alert('At most ' + MAX_LAB_PHOTOS + ' photos per read. Only the first ' + room + ' were taken.');
     }
     labPhotos = labPhotos.concat(photos.slice(0, Math.max(0, room)));
     rerenderLabs();
@@ -1887,13 +1910,13 @@
         type: 'button',
         disabled: full,
         onclick: function () {
-          pickPhoto('Ảnh phiếu xét nghiệm', 'CAMERA').then(function (photo) {
+          pickPhoto('Lab report photo', 'CAMERA').then(function (photo) {
             if (photo) {
               addLabPhotos([photo]);
             }
           });
         }
-      }, labPhotos.length ? '📷 Chụp thêm' : '📷 Chụp ảnh'),
+      }, labPhotos.length ? '📷 Take another' : '📷 Take photo'),
       h('button', {
         class: 'btn',
         type: 'button',
@@ -1905,12 +1928,12 @@
             }
           });
         }
-      }, '🖼️ Chọn nhiều ảnh'));
+      }, '🖼️ Choose photos'));
   }
 
   function showLabResults(result) {
     if (result.tests.length === 0) {
-      alert('Không đọc được kết quả nào. Hãy chụp rõ hơn, đủ sáng, thẳng phiếu.');
+      alert('No results could be read. Take a sharper photo, in good light, with the report straight.');
       return;
     }
     labPhotos = [];
@@ -1920,13 +1943,13 @@
 
   function labPhotosSection() {
     var box = h('div', null,
-      h('p', { class: 'muted small' }, labPhotos.length + ' ảnh đã chọn' + (labPhotos.length >= MAX_LAB_PHOTOS ? ' (tối đa)' : '') + '. Bấm ✕ để bỏ ảnh chụp lỗi.'),
+      h('p', { class: 'muted small' }, labPhotos.length + (labPhotos.length === 1 ? ' photo' : ' photos') + ' chosen' + (labPhotos.length >= MAX_LAB_PHOTOS ? ' (maximum)' : '') + '. Tap ✕ to drop a bad photo.'),
       h('div', { class: 'photo-grid' }, labPhotos.map(function (p, i) {
         return h('div', { class: 'photo-tile' },
-          h('img', { src: p.thumb, alt: 'Ảnh ' + (i + 1) }),
+          h('img', { src: p.thumb, alt: 'Photo ' + (i + 1) }),
           h('button', {
             type: 'button',
-            'aria-label': 'Bỏ ảnh ' + (i + 1),
+            'aria-label': 'Remove photo ' + (i + 1),
             onclick: function () {
               labPhotos.splice(i, 1);
               rerenderLabs();
@@ -1934,11 +1957,11 @@
           }, '✕'));
       })),
       labPhotoButtons(),
-      askButtons('labs', '🔍 Đọc ' + labPhotos.length + ' ảnh', function () {
+      askButtons('labs', '🔍 Read ' + labPhotos.length + (labPhotos.length === 1 ? ' photo' : ' photos'), function () {
         var images = labPhotos.map(function (p) {
           return p.base64;
         });
-        askClaude('labs', 'Claude đang đọc ' + images.length + ' ảnh phiếu xét nghiệm...', function () {
+        askClaude('labs', 'Claude is reading ' + images.length + (images.length === 1 ? ' lab report photo...' : ' lab report photos...'), function () {
           return { imagesBase64: images };
         }).then(function (result) {
           if (result) {
@@ -1953,12 +1976,12 @@
           labPhotos = [];
           rerenderLabs();
         }
-      }, 'Bỏ tất cả ảnh'));
+      }, 'Remove all photos'));
     return box;
   }
 
   function renderProfile() {
-    setScreen('Hồ sơ sức khỏe', 'profile', false);
+    setScreen('Health profile', 'profile', false);
     return Promise.all([Db.getKv('profile'), Db.getKv('targets'), Db.getAll('labs'), Db.getKv('labsUpdatedAt')]).then(function (r) {
       var profile = r[0] || {};
       var targets = r[1];
@@ -1968,10 +1991,10 @@
         return h('label', { class: 'field' }, label, input);
       }
       function select(name, options) {
-        var s = h('select', { name: name }, h('option', { value: '' }, '— Chọn —'), options.map(function (o) {
+        var s = h('select', { name: name }, h('option', { value: '' }, '— Choose —'), options.map(function (o) {
           return h('option', { value: o }, o);
         }));
-        s.value = profile[name] || '';
+        s.value = englishChoice(profile[name]) || '';
         return s;
       }
       function input(name, type, extra) {
@@ -1986,18 +2009,18 @@
       }
 
       var form = h('form', { class: 'card', novalidate: true },
-        h('h2', null, 'Thông tin cơ bản'),
+        h('h2', null, 'Basic information'),
         h('div', { class: 'grid-2' },
-          field('Giới tính', select('sex', ['Nam', 'Nữ'])),
-          field('Ngày sinh', input('birthDate', 'date')),
-          field('Chiều cao (cm)', input('height_cm', 'number', { inputmode: 'decimal', step: 'any' })),
-          field('Cân nặng (kg)', input('weight_kg', 'number', { inputmode: 'decimal', step: 'any' }))),
-        field('Mức vận động', select('activity', ['Ít vận động (ngồi nhiều)', 'Vận động nhẹ (1–3 buổi/tuần)', 'Vận động vừa (3–5 buổi/tuần)', 'Vận động nhiều (6–7 buổi/tuần)', 'Lao động nặng'])),
-        h('p', { class: 'muted small', style: 'margin-top:-6px' }, 'Mục tiêu mỗi ngày được tính cho ngày không tập. Ngày nào tập thì ghi bài tập ở màn hình Workout, năng lượng sẽ được cộng thêm cho riêng ngày đó.'),
-        field('Mục tiêu', select('goal', ['Giữ cân', 'Giảm cân', 'Tăng cân', 'Tăng cơ'])),
-        field('Bệnh lý, thuốc đang dùng', textarea('conditions', 'VD: gout, tiểu đường type 2, cao huyết áp; đang uống metformin')),
-        field('Chế độ ăn, dị ứng, sở thích', textarea('dietNotes', 'VD: dị ứng tôm, không ăn được cay, ăn chay ngày rằm')),
-        h('button', { class: 'btn primary', type: 'submit' }, 'Lưu hồ sơ'));
+          field('Sex', select('sex', ['Male', 'Female'])),
+          field('Date of birth', input('birthDate', 'date')),
+          field('Height (cm)', input('height_cm', 'number', { inputmode: 'decimal', step: 'any' })),
+          field('Weight (kg)', input('weight_kg', 'number', { inputmode: 'decimal', step: 'any' }))),
+        field('Activity level', select('activity', ACTIVITY_CHOICES)),
+        h('p', { class: 'muted small', style: 'margin-top:-6px' }, 'Daily targets are for a day without exercise. On days you exercise, log it in Workout and that day\'s energy goes up to match.'),
+        field('Goal', select('goal', GOAL_CHOICES)),
+        field('Medical conditions, medicines', textarea('conditions', 'e.g. gout, type 2 diabetes, high blood pressure; taking metformin')),
+        field('Diet, allergies, preferences', textarea('dietNotes', 'e.g. allergic to shrimp, can\'t eat spicy food, vegetarian on full-moon days')),
+        h('button', { class: 'btn primary', type: 'submit' }, 'Save profile'));
       form.addEventListener('submit', function (e) {
         e.preventDefault();
         var data = { updatedAt: new Date().toISOString() };
@@ -2008,11 +2031,11 @@
           data[name] = form.elements[name].value ? parseFloat(form.elements[name].value) : null;
         });
         if (!data.sex || !data.birthDate || !data.height_cm || !data.weight_kg) {
-          alert('Hãy nhập ít nhất giới tính, ngày sinh, chiều cao và cân nặng.');
+          alert('Please enter at least sex, date of birth, height and weight.');
           return;
         }
         Db.setKv('profile', data).then(function () {
-          alert('Đã lưu hồ sơ.');
+          alert('Profile saved.');
           route();
         });
       });
@@ -2024,19 +2047,19 @@
   }
 
   function targetsCard(profile, targets, labs, labsUpdatedAt) {
-    var card = h('div', { class: 'card' }, h('h2', null, '🎯 Mục tiêu mỗi ngày'));
+    var card = h('div', { class: 'card' }, h('h2', null, '🎯 Daily targets'));
     if (!targets) {
-      card.appendChild(h('p', { class: 'muted' }, 'Claude tính lượng mỗi chất bạn cần (và giới hạn tối đa) dựa trên hồ sơ và xét nghiệm của bạn.'));
+      card.appendChild(h('p', { class: 'muted' }, 'The AI works out how much of each nutrient you need (and the maximum) from your profile and lab results.'));
     } else {
       if (targetsStale(targets, profile, labsUpdatedAt)) {
-        card.appendChild(h('div', { class: 'warning' }, 'Hồ sơ hoặc xét nghiệm đã thay đổi sau lần tính trước. Nên tính lại.'));
+        card.appendChild(h('div', { class: 'warning' }, 'Your profile or lab results changed after the last calculation. Worth recalculating.'));
       }
-      card.appendChild(h('p', { class: 'muted small' }, 'Tính ngày ' + dayTitle(dayKey(new Date(targets.computedAt)))));
+      card.appendChild(h('p', { class: 'muted small' }, 'Calculated on ' + dayTitle(dayKey(new Date(targets.computedAt)))));
       card.appendChild(h('p', null, targets.explanation));
       if (targets.labFlags && targets.labFlags.length) {
-        card.appendChild(h('h3', null, 'Xét nghiệm cần chú ý'));
+        card.appendChild(h('h3', null, 'Lab results to watch'));
         card.appendChild(h('ul', { class: 'items' }, targets.labFlags.map(function (f) {
-          var label = { low: 'thấp', high: 'cao', normal: 'bình thường', unclear: 'chưa rõ' }[f.status];
+          var label = { low: 'low', high: 'high', normal: 'normal', unclear: 'unclear' }[f.status];
           return h('li', null, h('strong', null, f.test + ' (' + label + '): '), f.advice);
         })));
       }
@@ -2052,9 +2075,9 @@
         type: 'button',
         onclick: function () {
           table.hidden = !table.hidden;
-          toggle.textContent = table.hidden ? '▸ Xem bảng mục tiêu' : '▾ Ẩn bảng mục tiêu';
+          toggle.textContent = table.hidden ? '▸ Show target table' : '▾ Hide target table';
         }
-      }, '▸ Xem bảng mục tiêu');
+      }, '▸ Show target table');
       card.appendChild(toggle);
       card.appendChild(table);
     }
@@ -2066,12 +2089,12 @@
         labFlags: result.lab_flags
       }).then(route);
     }
-    card.appendChild(askButtons('targets', targets ? 'Tính lại mục tiêu' : 'Tính mục tiêu mỗi ngày', function () {
+    card.appendChild(askButtons('targets', targets ? 'Recalculate targets' : 'Work out daily targets', function () {
       if (!profile) {
-        alert('Hãy lưu hồ sơ trước.');
+        alert('Please save your profile first.');
         return;
       }
-      askClaude('targets', 'Claude đang tính mục tiêu dinh dưỡng của bạn...', function (p, labList) {
+      askClaude('targets', 'Claude is working out your nutrition targets...', function (p, labList) {
         return { profile: p, labs: labList, today: dayKey() };
       }).then(function (result) {
         return result ? saveTargets(result) : null;
@@ -2085,18 +2108,18 @@
   }
 
   function labsCard(labs) {
-    var card = h('div', { class: 'card' }, h('h2', null, '🧪 Xét nghiệm máu & nước tiểu'));
+    var card = h('div', { class: 'card' }, h('h2', null, '🧪 Blood & urine tests'));
 
     labsCardEl = card;
 
     if (pendingLabs) {
-      card.appendChild(h('p', { class: 'muted small' }, 'Claude đọc được ' + pendingLabs.tests.length + ' kết quả. Kiểm tra lại với phiếu rồi bỏ chọn dòng sai.'));
+      card.appendChild(h('p', { class: 'muted small' }, 'The AI read ' + pendingLabs.tests.length + (pendingLabs.tests.length === 1 ? ' result' : ' results') + '. Check them against the report and untick any wrong lines.'));
       var boxes = pendingLabs.tests.map(function (t) {
         var box = h('input', { type: 'checkbox' });
         box.checked = true;
         card.appendChild(h('label', { class: 'check-row' }, box,
-          h('span', null, h('strong', null, t.name), ': ' + t.value + ' ' + t.unit + (t.reference_range ? ' (tham chiếu ' + t.reference_range + ')' : ''),
-            h('div', { class: 'muted small' }, t.date ? 'Ngày ' + t.date : 'Không rõ ngày — sẽ lưu là hôm nay'))));
+          h('span', null, h('strong', null, t.name), ': ' + t.value + ' ' + t.unit + (t.reference_range ? ' (reference ' + t.reference_range + ')' : ''),
+            h('div', { class: 'muted small' }, t.date ? 'Date ' + t.date : 'No date — will be saved as today'))));
         return box;
       });
       card.appendChild(h('div', { class: 'btn-row' },
@@ -2114,7 +2137,7 @@
               route();
             });
           }
-        }, 'Thêm các dòng đã chọn'),
+        }, 'Add the ticked lines'),
         h('button', {
           class: 'btn',
           type: 'button',
@@ -2122,7 +2145,7 @@
             pendingLabs = null;
             rerenderLabs();
           }
-        }, 'Bỏ')));
+        }, 'Discard')));
       return card;
     }
 
@@ -2132,7 +2155,7 @@
     }
 
     if (labs.length === 0) {
-      card.appendChild(h('p', { class: 'muted' }, 'Chưa có kết quả xét nghiệm.'));
+      card.appendChild(h('p', { class: 'muted' }, 'No lab results yet.'));
     }
     labs.sort(function (a, b) {
       return (b.date || '').localeCompare(a.date || '') || a.name.localeCompare(b.name);
@@ -2140,20 +2163,20 @@
       card.appendChild(h('div', { class: 'lab-row' },
         h('div', { class: 'info' },
           h('strong', null, t.name), ': ' + t.value + ' ' + (t.unit || ''),
-          h('div', { class: 'muted small' }, ({ blood: 'Máu', urine: 'Nước tiểu', other: 'Khác' })[t.type] + (t.date ? ' · ' + t.date : '') + (t.reference_range ? ' · tham chiếu ' + t.reference_range : ''))),
+          h('div', { class: 'muted small' }, ({ blood: 'Blood', urine: 'Urine', other: 'Other' })[t.type] + (t.date ? ' · ' + t.date : '') + (t.reference_range ? ' · reference ' + t.reference_range : ''))),
         h('button', {
           class: 'remove',
           type: 'button',
-          'aria-label': 'Xóa ' + t.name,
+          'aria-label': 'Delete ' + t.name,
           onclick: function () {
-            if (confirm('Xóa kết quả "' + t.name + '"?')) {
+            if (confirm('Delete the result "' + t.name + '"?')) {
               Db.remove('labs', t.id).then(markLabsChanged).then(route);
             }
           }
         }, '✕')));
     });
 
-    card.appendChild(h('p', { class: 'muted small', style: 'margin-bottom:0' }, 'Chụp hoặc chọn ảnh phiếu xét nghiệm (nhiều trang, nhiều phiếu đều được) — Claude đọc giúp:'));
+    card.appendChild(h('p', { class: 'muted small', style: 'margin-bottom:0' }, 'Take or choose photos of your lab reports (several pages or reports are fine) — the AI reads them for you:'));
     card.appendChild(labPhotoButtons());
     if (askMode() === 'app') {
       card.appendChild(h('button', {
@@ -2162,25 +2185,25 @@
         onclick: function () {
           pasteReply('labs', showLabResults);
         }
-      }, '📋 Đã gửi ảnh cho Claude? Dán câu trả lời ở đây'));
+      }, '📋 Sent the photos to Claude? Paste the reply here'));
     }
 
     var addForm = h('form', { hidden: true, novalidate: true, style: 'margin-top:12px' },
       h('div', { class: 'grid-2' },
-        h('label', { class: 'field' }, 'Loại', h('select', { name: 'type' },
-          h('option', { value: 'blood' }, 'Máu'), h('option', { value: 'urine' }, 'Nước tiểu'), h('option', { value: 'other' }, 'Khác'))),
-        h('label', { class: 'field' }, 'Ngày xét nghiệm', h('input', { name: 'date', type: 'date', value: dayKey() }))),
-      h('label', { class: 'field' }, 'Tên xét nghiệm', h('input', { name: 'name', type: 'text', placeholder: 'VD: Acid uric, Glucose, LDL-C' })),
+        h('label', { class: 'field' }, 'Type', h('select', { name: 'type' },
+          h('option', { value: 'blood' }, 'Blood'), h('option', { value: 'urine' }, 'Urine'), h('option', { value: 'other' }, 'Other'))),
+        h('label', { class: 'field' }, 'Test date', h('input', { name: 'date', type: 'date', value: dayKey() }))),
+      h('label', { class: 'field' }, 'Test name', h('input', { name: 'name', type: 'text', placeholder: 'e.g. Uric acid, Glucose, LDL-C' })),
       h('div', { class: 'grid-2' },
-        h('label', { class: 'field' }, 'Kết quả', h('input', { name: 'value', type: 'text', placeholder: 'VD: 480' })),
-        h('label', { class: 'field' }, 'Đơn vị', h('input', { name: 'unit', type: 'text', placeholder: 'VD: µmol/L' }))),
-      h('label', { class: 'field' }, 'Khoảng tham chiếu (nếu có)', h('input', { name: 'reference_range', type: 'text', placeholder: 'VD: 202–416' })),
-      h('button', { class: 'btn primary', type: 'submit' }, 'Thêm kết quả'));
+        h('label', { class: 'field' }, 'Result', h('input', { name: 'value', type: 'text', placeholder: 'e.g. 480' })),
+        h('label', { class: 'field' }, 'Unit', h('input', { name: 'unit', type: 'text', placeholder: 'e.g. µmol/L' }))),
+      h('label', { class: 'field' }, 'Reference range (if any)', h('input', { name: 'reference_range', type: 'text', placeholder: 'e.g. 202–416' })),
+      h('button', { class: 'btn primary', type: 'submit' }, 'Add result'));
     addForm.addEventListener('submit', function (e) {
       e.preventDefault();
       var f = addForm.elements;
       if (!f.name.value.trim() || !f.value.value.trim()) {
-        alert('Hãy nhập tên xét nghiệm và kết quả.');
+        alert('Please enter the test name and the result.');
         return;
       }
       Db.put('labs', {
@@ -2199,7 +2222,7 @@
         addForm.hidden = false;
         showAdd.hidden = true;
       }
-    }, '✍️ Nhập tay một kết quả');
+    }, '✍️ Enter a result by hand');
     card.appendChild(showAdd);
     card.appendChild(addForm);
     return card;
@@ -2207,7 +2230,7 @@
 
   // Settings: API key, spending, backup
   function renderSettings() {
-    setScreen('Cài đặt', 'settings', false);
+    setScreen('Settings', 'settings', false);
     return loadSettings().then(function (s) {
       var mode = askMode(s);
       function modeChoice(value, title, detail) {
@@ -2220,19 +2243,19 @@
         return h('label', { class: 'check-row' }, radio, h('span', null, h('strong', null, title), h('div', { class: 'muted small' }, detail)));
       }
       viewEl.appendChild(h('div', { class: 'card' },
-        h('h2', null, '🤖 Cách hỏi AI'),
-        modeChoice('app', 'Qua ứng dụng Claude (miễn phí với gói Pro)',
-          'App gửi câu hỏi và ảnh sang ứng dụng Claude trên điện thoại; bạn bấm gửi, sao chép câu trả lời rồi dán lại vào đây. Tính vào giới hạn sử dụng của gói Pro.'),
-        modeChoice('gemini', 'Google Gemini (miễn phí)',
-          'Một chạm, kết quả hiện ngay trong app. Cần Gemini API key miễn phí từ aistudio.google.com (có giới hạn số lần mỗi ngày).'),
-        modeChoice('groq', 'Groq (miễn phí, rất nhanh)',
-          'Một chạm, trả lời thường chỉ vài giây. Cần Groq API key miễn phí từ console.groq.com. Đọc ảnh món ăn có thể kém chính xác hơn Gemini.'),
-        modeChoice('openrouter', 'OpenRouter (miễn phí)',
-          'Một chạm. Dùng các model miễn phí đọc được ảnh (Gemma, Nemotron...), app tự chọn. Key miễn phí từ openrouter.ai; khoảng 50 lần mỗi ngày.'),
-        modeChoice('cohere', 'Cohere (miễn phí, 1.000 lần/tháng)',
-          'Một chạm. Model Command A Vision. Key dùng thử miễn phí từ dashboard.cohere.com, khoảng 1.000 lần mỗi tháng.'),
-        modeChoice('api', 'Claude API key (trả phí theo lần dùng)',
-          'Một chạm, kết quả hiện ngay trong app. Cần API key và tiền nạp ở console.anthropic.com (khoảng vài cent mỗi bữa).')));
+        h('h2', null, '🤖 How to ask the AI'),
+        modeChoice('app', 'Through the Claude app (free with a Pro plan)',
+          'The app sends the question and photos to the Claude app; you tap send, copy the reply and paste it back here. Counts toward your Pro plan\'s usage limits.'),
+        modeChoice('gemini', 'Google Gemini (free)',
+          'One tap, the result shows straight in the app. Needs a free Gemini API key from aistudio.google.com (limited uses per day).'),
+        modeChoice('groq', 'Groq (free, very fast)',
+          'One tap, usually answers in a few seconds. Needs a free Groq API key from console.groq.com. May read food photos less accurately than Gemini.'),
+        modeChoice('openrouter', 'OpenRouter (free)',
+          'One tap. Uses free models that read photos (Gemma, Nemotron...), chosen by the app. Free key from openrouter.ai; about 50 uses a day.'),
+        modeChoice('cohere', 'Cohere (free, 1,000 uses/month)',
+          'One tap. Command A Vision model. Free trial key from dashboard.cohere.com, about 1,000 uses a month.'),
+        modeChoice('api', 'Claude API key (paid per use)',
+          'One tap, the result shows straight in the app. Needs an API key and credit at console.anthropic.com (a few cents per meal).')));
 
       /** Key box for a free service, with a button that checks the key and shows how fast it answers. */
       function freeKeyCard(service, placeholder, help, extra) {
@@ -2254,30 +2277,30 @@
             onclick: function () {
               input.type = input.type === 'password' ? 'text' : 'password';
             }
-          }, 'Hiện / ẩn key'),
+          }, 'Show / hide key'),
           h('div', { class: 'btn-row' },
             h('button', {
               class: 'btn',
               type: 'button',
               onclick: function () {
-                testResult.textContent = 'Đang thử...';
+                testResult.textContent = 'Testing...';
                 AI.testFreeKey(service, input.value.trim(), s.geminiSpeed).then(function (r) {
-                  testResult.textContent = '✅ Key dùng được — model ' + r.model + ', trả lời trong ' + r.seconds + ' giây.';
+                  testResult.textContent = '✅ Key works — model ' + r.model + ', answered in ' + r.seconds + ' seconds.';
                 }, function (err) {
                   testResult.textContent = '❌ ' + (err && err.message ? err.message : err);
                 });
               }
-            }, '🧪 Thử key'),
+            }, '🧪 Test key'),
             h('button', {
               class: 'btn primary',
               type: 'button',
               onclick: function () {
                 s[field] = input.value.trim();
                 saveSettings(s).then(function () {
-                  alert(s[field] ? 'Đã lưu ' + name + ' API key.' : 'Đã xóa ' + name + ' API key.');
+                  alert(s[field] ? name + ' API key saved.' : name + ' API key removed.');
                 });
               }
-            }, 'Lưu key')),
+            }, 'Save key')),
           testResult);
       }
 
@@ -2292,33 +2315,33 @@
       }
 
       viewEl.appendChild(freeKeyCard('gemini', 'AIza...', [
-        'Vào aistudio.google.com/apikey → đăng nhập Google → "Create API key" → sao chép rồi dán vào đây. Miễn phí, không cần thẻ. Key chỉ lưu ' + ON_DEVICE + '.',
-        'Lưu ý: với gói miễn phí, Google có thể dùng dữ liệu gửi lên (ảnh, hồ sơ, xét nghiệm) để cải thiện sản phẩm của họ.'
+        'Go to aistudio.google.com/apikey → sign in with Google → "Create API key" → copy it and paste it here. Free, no card needed. The key is stored only ' + ON_DEVICE + '.',
+        'Note: on the free plan, Google may use what you send (photos, profile, lab results) to improve its products.'
       ], h('div', null,
-        speedChoice('fast', 'Nhanh (Flash-Lite)', 'Trả lời nhanh hơn nhiều lần, đủ tốt cho bữa ăn hằng ngày.'),
-        speedChoice('careful', 'Kỹ hơn (Flash)', 'Chậm hơn nhưng đọc ảnh kỹ hơn — dùng khi đọc phiếu xét nghiệm khó.'))));
+        speedChoice('fast', 'Fast (Flash-Lite)', 'Answers several times faster; good enough for everyday meals.'),
+        speedChoice('careful', 'More careful (Flash)', 'Slower but reads photos more carefully — use it for hard-to-read lab reports.'))));
 
       viewEl.appendChild(freeKeyCard('groq', 'gsk_...', [
-        'Vào console.groq.com → đăng nhập (Google hoặc email) → API Keys → "Create API Key" → sao chép rồi dán vào đây. Miễn phí, không cần thẻ. Key chỉ lưu ' + ON_DEVICE + '.',
-        'Groq đọc tối đa 5 ảnh mỗi lần; khi đọc nhiều ảnh xét nghiệm, app tự chia thành nhiều lần.'
+        'Go to console.groq.com → sign in (Google or email) → API Keys → "Create API Key" → copy it and paste it here. Free, no card needed. The key is stored only ' + ON_DEVICE + '.',
+        'Groq reads at most 5 photos at a time; with more lab report photos, the app splits them into several requests.'
       ]));
 
       viewEl.appendChild(freeKeyCard('openrouter', 'sk-or-...', [
-        'Vào openrouter.ai → đăng nhập (Google, GitHub hoặc email) → Keys → "Create API Key" → sao chép rồi dán vào đây. Miễn phí, không cần thẻ. Key chỉ lưu ' + ON_DEVICE + '.',
-        'App chỉ dùng model có đuôi ":free" (không bao giờ tốn tiền) và tự chuyển sang model miễn phí khác khi một model bận. Giới hạn khoảng 50 lần mỗi ngày (1.000 lần nếu tài khoản từng nạp từ 10 USD).',
-        'Lưu ý: nhà cung cấp model miễn phí có thể lưu và dùng dữ liệu gửi lên.'
+        'Go to openrouter.ai → sign in (Google, GitHub or email) → Keys → "Create API Key" → copy it and paste it here. Free, no card needed. The key is stored only ' + ON_DEVICE + '.',
+        'The app only uses models ending in ":free" (never charged) and moves to another free model when one is busy. Limit about 50 uses a day (1,000 if the account has ever topped up $10 or more).',
+        'Note: free model providers may keep and use what you send.'
       ]));
 
       viewEl.appendChild(freeKeyCard('cohere', 'Cohere API key', [
-        'Vào dashboard.cohere.com → đăng ký → API Keys → sao chép "Trial key" rồi dán vào đây. Miễn phí, không cần thẻ. Key chỉ lưu ' + ON_DEVICE + '.',
-        'Key dùng thử có khoảng 1.000 lần hỏi mỗi tháng và chỉ dành cho việc dùng cá nhân.'
+        'Go to dashboard.cohere.com → sign up → API Keys → copy the "Trial key" and paste it here. Free, no card needed. The key is stored only ' + ON_DEVICE + '.',
+        'A trial key allows about 1,000 requests a month, for personal use only.'
       ]));
 
       var keyInput = h('input', { type: 'password', autocomplete: 'off', placeholder: 'sk-ant-...' });
       keyInput.value = s.apiKey || '';
       viewEl.appendChild(h('div', { class: 'card', hidden: mode !== 'api' },
         h('h2', null, '🔑 Claude API key'),
-        h('p', { class: 'muted small' }, 'Tạo key tại console.anthropic.com → API Keys, rồi dán vào đây. Key chỉ lưu ' + ON_DEVICE + '.'),
+        h('p', { class: 'muted small' }, 'Create a key at console.anthropic.com → API Keys, then paste it here. The key is stored only ' + ON_DEVICE + '.'),
         h('label', { class: 'field' }, 'API key', keyInput),
         h('button', {
           class: 'link-btn',
@@ -2326,34 +2349,34 @@
           onclick: function () {
             keyInput.type = keyInput.type === 'password' ? 'text' : 'password';
           }
-        }, 'Hiện / ẩn key'),
+        }, 'Show / hide key'),
         h('button', {
           class: 'btn primary',
           type: 'button',
           onclick: function () {
             s.apiKey = keyInput.value.trim();
             saveSettings(s).then(function () {
-              alert(s.apiKey ? 'Đã lưu API key.' : 'Đã xóa API key.');
+              alert(s.apiKey ? 'API key saved.' : 'API key removed.');
             });
           }
-        }, 'Lưu key')));
+        }, 'Save key')));
 
       viewEl.appendChild(h('div', { class: 'card', hidden: mode !== 'api' },
-        h('h2', null, '💵 Chi phí đã dùng'),
-        h('p', null, 'Khoảng $' + (s.totalCostUsd || 0).toFixed(2) + ' cho ' + (s.requestCount || 0) + ' lần hỏi Claude.'),
-        h('p', { class: 'muted small' }, 'Ước tính theo giá Claude Opus 5.5; số chính xác xem ở console.anthropic.com. Mỗi bữa ăn thường tốn vài cent.')));
+        h('h2', null, '💵 Spending so far'),
+        h('p', null, 'About $' + (s.totalCostUsd || 0).toFixed(2) + ' for ' + (s.requestCount || 0) + ' requests to Claude.'),
+        h('p', { class: 'muted small' }, 'Estimated from Claude Opus 5.5 prices; see console.anthropic.com for the exact figure. A meal usually costs a few cents.')));
 
       var storageInfo = h('p', { class: 'muted small' }, '');
       if (!isNative) {
         showStorageInfo(storageInfo);
       }
       viewEl.appendChild(h('div', { class: 'card' },
-        h('h2', null, '💾 Sao lưu'),
+        h('h2', null, '💾 Backup'),
         h('p', { class: 'muted small' }, isNative
-          ? 'Dữ liệu chỉ nằm trên điện thoại này và sẽ mất nếu gỡ ứng dụng. Hãy sao lưu thường xuyên (gửi file qua Zalo/Drive/email cho chính mình).'
-          : 'Dữ liệu (hồ sơ, xét nghiệm máu/nước tiểu, bữa ăn, bài tập, API key) chỉ nằm trong trình duyệt này, trên máy này — không gửi lên máy chủ nào. Dữ liệu sẽ mất nếu xóa dữ liệu duyệt web của trang này, và không có khi mở bằng trình duyệt hoặc máy khác, hay ở chế độ ẩn danh. Hãy sao lưu thường xuyên; dùng file sao lưu để chuyển dữ liệu sang máy khác.'),
+          ? 'Your data is only on this phone and will be lost if the app is uninstalled. Back up often (send the file to yourself by Zalo, Drive or email).'
+          : 'Your data (profile, blood/urine tests, meals, exercise, API keys) is only in this browser on this device — it isn\'t sent to any server. It is lost if you clear this site\'s browsing data, and it isn\'t there in another browser, on another device or in a private window. Back up often; use the backup file to move your data to another device.'),
         isNative ? null : storageInfo,
-        h('button', { class: 'btn', type: 'button', onclick: exportBackup }, '⬆️ Xuất file sao lưu'),
+        h('button', { class: 'btn', type: 'button', onclick: exportBackup }, '⬆️ Export backup file'),
         h('button', {
           class: 'btn',
           type: 'button',
@@ -2361,23 +2384,23 @@
             backupInput.value = '';
             backupInput.click();
           }
-        }, '⬇️ Khôi phục từ file')));
+        }, '⬇️ Restore from file')));
 
       viewEl.appendChild(h('div', { class: 'card' },
         h('img', { class: 'about-logo', src: 'img/logo.png', alt: 'Logo' }),
-        h('h2', null, 'ℹ️ Về ứng dụng'),
-        h('p', { class: 'muted small' }, 'Ảnh bữa ăn, hồ sơ và kết quả xét nghiệm được gửi tới Anthropic (Claude), Google (Gemini), Groq, OpenRouter hoặc Cohere, tùy cách hỏi đã chọn, để phân tích mỗi khi bạn bấm phân tích; ngoài ra mọi dữ liệu chỉ lưu ' + (isNative ? 'trên điện thoại.' : 'trong trình duyệt này.')),
-        isNative ? null : h('p', { class: 'muted small' }, 'Có bản ứng dụng Android: ',
-          h('a', { href: 'https://github.com/aplintell/nutrition-coach/releases/latest/download/nutrition-coach.apk' }, 'tải file APK'),
-          ' (dữ liệu hai bản không tự đồng bộ — chuyển bằng file sao lưu).'),
-        h('p', { class: 'muted small' }, 'Mỗi lần hỏi Claude chỉ gửi dữ liệu của hôm nay (ảnh bữa đang ăn, các bữa trong ngày); các ngày trước không được gửi.'),
-        h('p', { class: 'muted small' }, 'Ảnh gốc của bữa ăn được giữ ' + PHOTO_KEEP_DAYS + ' ngày rồi tự xóa; ảnh nhỏ trong lịch sử được giữ mãi. File sao lưu không gồm ảnh gốc.'),
-        h('p', { class: 'muted small' }, 'Số liệu dinh dưỡng là ước tính của AI và có thể sai. Ứng dụng không thay thế bác sĩ hoặc chuyên gia dinh dưỡng.'),
-        h('p', { class: 'muted small' }, 'Phiên bản ' + APP_VERSION)));
+        h('h2', null, 'ℹ️ About'),
+        h('p', { class: 'muted small' }, 'Meal photos, your profile and lab results are sent to Anthropic (Claude), Google (Gemini), Groq, OpenRouter or Cohere, depending on the chosen AI, each time you ask for an analysis; otherwise all data stays ' + (isNative ? 'on the phone.' : 'in this browser.')),
+        isNative ? null : h('p', { class: 'muted small' }, 'There is an Android app: ',
+          h('a', { href: 'https://github.com/aplintell/nutrition-coach/releases/latest/download/nutrition-coach.apk' }, 'download the APK'),
+          ' (the two don\'t sync — move data with a backup file).'),
+        h('p', { class: 'muted small' }, 'Each AI request only sends today\'s data (the meal photo, the day\'s meals); earlier days are never sent.'),
+        h('p', { class: 'muted small' }, 'Full meal photos are kept for ' + PHOTO_KEEP_DAYS + ' days and then deleted; the small photos in History are kept for good. Backup files don\'t include the full photos.'),
+        h('p', { class: 'muted small' }, 'Nutrition figures are AI estimates and can be wrong. The app doesn\'t replace a doctor or a dietitian.'),
+        h('p', { class: 'muted small' }, 'Version ' + APP_VERSION)));
     });
   }
 
-  var APP_VERSION = '1.22';
+  var APP_VERSION = '1.23';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
@@ -2389,25 +2412,25 @@
       navigator.storage.persisted ? navigator.storage.persisted() : Promise.resolve(false)
     ]).then(function (r) {
       var mb = (r[0].usage || 0) / 1024 / 1024;
-      el.textContent = '📦 Đang dùng ' + (mb < 0.1 ? '< 0,1' : mb.toFixed(1).replace('.', ',')) + ' MB trong trình duyệt. '
+      el.textContent = '📦 Using ' + (mb < 0.1 ? '< 0.1' : mb.toFixed(1)) + ' MB in the browser. '
         + (r[1]
-          ? 'Trình duyệt đã đồng ý giữ dữ liệu lâu dài.'
-          : 'Trình duyệt chưa hứa giữ lâu dài (có thể tự xóa khi máy hết chỗ) — thêm trang vào màn hình chính hoặc đánh dấu trang để được giữ, và nhớ sao lưu.');
+          ? 'The browser has agreed to keep the data for good.'
+          : 'The browser hasn\'t promised to keep it for good (it may clear it when the device runs low on space) — add the page to your home screen or bookmark it, and remember to back up.');
     }).catch(function () {});
   }
 
   function exportBackup() {
     Db.exportAll().then(function (data) {
       var text = JSON.stringify(data);
-      var fileName = 'dinh-duong-sao-luu-' + dayKey() + '.json';
+      var fileName = 'my-nutrition-backup-' + dayKey() + '.json';
       if (isNative && plugins.Filesystem && plugins.Share) {
         return plugins.Filesystem.writeFile({ path: fileName, data: text, directory: 'CACHE', encoding: 'utf8' })
           .then(function (res) {
-            return plugins.Share.share({ title: fileName, files: [res.uri], dialogTitle: 'Lưu file sao lưu' });
+            return plugins.Share.share({ title: fileName, files: [res.uri], dialogTitle: 'Save backup file' });
           })
           .catch(function (err) {
             if (!/cancel/i.test(err && err.message || '')) {
-              alert('Không xuất được file: ' + err.message);
+              alert('Could not export the file: ' + err.message);
             }
           });
       }
@@ -2426,15 +2449,15 @@
       try {
         data = JSON.parse(reader.result);
       } catch (e) {
-        alert('File không đọc được.');
+        alert('The file could not be read.');
         return;
       }
       var mealCount = (data.meals || []).length;
-      if (!confirm('Khôi phục sẽ THAY THẾ toàn bộ dữ liệu hiện tại bằng file sao lưu (' + mealCount + ' bữa ăn). Tiếp tục?')) {
+      if (!confirm('Restoring will REPLACE all current data with the backup file (' + mealCount + (mealCount === 1 ? ' meal' : ' meals') + '). Continue?')) {
         return;
       }
       Db.importAll(data).then(function () {
-        alert('Đã khôi phục.');
+        alert('Restored.');
         location.hash = '#today';
       }, function (err) {
         alert(err.message);
@@ -2481,7 +2504,7 @@
       done = renderDay(dayKey());
     }
     return done.catch(function (err) {
-      viewEl.appendChild(h('p', { class: 'error' }, 'Lỗi: ' + (err && err.message ? err.message : err)));
+      viewEl.appendChild(h('p', { class: 'error' }, 'Error: ' + (err && err.message ? err.message : err)));
     });
   }
 

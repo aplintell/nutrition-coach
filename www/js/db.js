@@ -150,7 +150,7 @@
     /** Replaces all data with a backup made by exportAll. Settings (API key) are kept as they are. */
     importAll: function (data) {
       if (!data || data.app !== 'nutrition-coach') {
-        return Promise.reject(new Error('Đây không phải file sao lưu của ứng dụng này.'));
+        return Promise.reject(new Error('This is not a backup file from this app.'));
       }
       return Promise.all(['labs', 'meals', 'plans', 'photos', 'exercises'].map(Db.clear)).then(function () {
         var writes = [Db.setKv('profile', data.profile || null), Db.setKv('targets', data.targets || null)];

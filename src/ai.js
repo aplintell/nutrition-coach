@@ -80,7 +80,7 @@ const LabsResult = z.object({
 const NUTRIENT_LIST = NUTRIENTS.map((n) => `${n.key} (${n.name}, ${n.unit})`).join(', ');
 
 const SYSTEM = `You are the nutrition assistant inside a personal Android app used by one person in Vietnam.
-Always write every text field in natural Vietnamese, short and practical. Prefer Vietnamese dishes and foods that are easy to buy in Vietnam.
+Always write every text field in plain English, short and practical. Prefer Vietnamese dishes and foods that are easy to buy in Vietnam; a Vietnamese dish may keep its Vietnamese name with a short English description in brackets, e.g. "Phở bò (beef noodle soup)".
 Nutrient keys and units: ${NUTRIENT_LIST}.
 Use standard food-composition knowledge (Vietnamese food composition tables, USDA) for estimates. All amounts are numbers in the unit named by the key; use 0 when a food has none of a nutrient.
 Take the person's health profile and lab results seriously (for example high uric acid → watch purines; high glucose/HbA1c → watch sugar and refined carbs; high LDL → watch saturated fat; kidney markers → watch protein, potassium, phosphorus, sodium).
@@ -88,7 +88,7 @@ You are not a doctor: when a lab value or a pattern looks medically significant,
 
 function describeProfile(profile, labs) {
   const labLines = (labs || []).map((t) => `- [${t.type}] ${t.name}: ${t.value} ${t.unit || ''}`.trim()
-    + (t.reference_range ? ` (khoảng tham chiếu ${t.reference_range})` : '') + (t.date ? ` — ngày ${t.date}` : ''));
+    + (t.reference_range ? ` (reference range ${t.reference_range})` : '') + (t.date ? ` — dated ${t.date}` : ''));
   return [
     'Health profile:',
     JSON.stringify(profile || {}, null, 1),
@@ -102,7 +102,7 @@ function describeProfile(profile, labs) {
 
 const ZERO_NUTRIENTS = Object.fromEntries(NUTRIENTS.map((n) => [n.key, 0]));
 
-// One line about the day's logged exercise, e.g. "Cầu lông 12 set, Nhảy dây 2000 lần (~990 kcal extra)".
+// One line about the day's logged exercise, e.g. "Badminton 12 sets, Skipping 2000 times (~990 kcal extra)".
 // Sunbathing: the skin's vitamin D is already counted in the day's totals, so it isn't advised again.
 function sunLine(exercise) {
   const sun = exercise.reduce((sum, e) => sum + (e.vitamin_d_ug || 0), 0);
@@ -139,7 +139,7 @@ function mealRequest({ imageBase64, note, profile, labs, eatenToday, exercise, n
       '2. Estimate the edible grams of each item as eaten (no bones or shells), using plates, bowls, chopsticks and hands in the photo for scale.',
       '3. For each item, take its nutrients per 100 g from food-composition data and multiply by grams / 100. Put those numbers in the nutrients of that item. The app adds the items up for the meal total, so do not give a total.',
       'If the photo is not food, set is_food to false and items to an empty list.',
-      'meal_name: a short Vietnamese name for the meal. confidence: how sure you are about the portions.',
+      'meal_name: a short English name for the meal (a Vietnamese dish may keep its name, with English in brackets). confidence: how sure you are about the portions.',
       'comment: 1-3 sentences on how this meal fits this person today (considering their profile, labs and what they already ate).',
       'warnings: specific concerns for this person (e.g. high purine with high uric acid); empty list if none.'
     ].join('\n'),
@@ -179,7 +179,7 @@ function targetsRequest({ profile, labs, today }) {
       '- max: the most they should have in a day (upper limit, or a lower medical limit when their labs or conditions call for it), or null when there is no meaningful maximum.',
       'Base energy on age, sex, height, weight, activity and goal. Adjust for their lab results and conditions.',
       'The person logs sport and workouts separately each day, and the app adds the energy of each day\'s exercise on top of these targets. So set the targets for a day WITHOUT sport or workouts: count only the activity of their job and daily life (keep heavy manual work if that is their job), even if activity_level mentions weekly training sessions.',
-      'explanation: a short Vietnamese explanation of the main choices (energy, and anything changed because of labs/conditions).',
+      'explanation: a short English explanation of the main choices (energy, and anything changed because of labs/conditions).',
       'lab_flags: one entry per lab result that is outside its normal range or worth attention, with simple dietary advice; empty list if none.'
     ].join('\n'),
     template: {
@@ -209,7 +209,7 @@ function planRequest({ profile, labs, targets, meals, totals, exercise, now }) {
       'Totals so far:',
       JSON.stringify(totals),
       '',
-      'summary: 2-4 Vietnamese sentences on how the day is going.',
+      'summary: 2-4 English sentences on how the day is going.',
       'lacking: nutrients still clearly below their min (amount_left in the nutrient\'s unit), most important first. Skip trivial gaps.',
       'excess: nutrients already over their max (over_by in the nutrient\'s unit), or close enough that the rest of the day must avoid them.',
       'plan: the remaining meals/snacks for TODAY ONLY that fit the time left (no breakfast if it is evening; nothing heavy late at night), with concrete Vietnamese dishes and portions that fill the gaps without adding to the excesses. why: one sentence each.',
@@ -257,7 +257,7 @@ const SCHEMAS = { meal: MealResult, targets: TargetsResult, plan: PlanResult, la
 
 function client(apiKey) {
   if (!apiKey) {
-    throw new AiError('Chưa có API key. Vào Cài đặt để nhập API key của Anthropic.');
+    throw new AiError('No API key yet. Go to Settings to enter your Anthropic API key.');
   }
   return new Anthropic({ apiKey, dangerouslyAllowBrowser: true, maxRetries: 2 });
 }
@@ -270,24 +270,24 @@ function explain(err) {
     return err;
   }
   if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError) {
-    return new AiError('API key không đúng hoặc đã bị khóa. Kiểm tra lại trong Cài đặt.');
+    return new AiError('The API key is wrong or has been disabled. Check it in Settings.');
   }
   if (err instanceof Anthropic.RateLimitError) {
-    return new AiError('Gửi quá nhiều yêu cầu hoặc tài khoản hết hạn mức. Đợi một lát rồi thử lại.');
+    return new AiError('Too many requests, or the account is over its limit. Wait a moment and try again.');
   }
   if (err instanceof Anthropic.BadRequestError) {
     const credit = /credit|billing|balance/i.test(err.message || '');
     return new AiError(credit
-      ? 'Tài khoản Anthropic hết tiền (credit). Nạp thêm tại console.anthropic.com.'
-      : 'Yêu cầu bị từ chối: ' + (err.message || 'lỗi không rõ'));
+      ? 'The Anthropic account is out of credit. Top up at console.anthropic.com.'
+      : 'Request refused: ' + (err.message || 'unknown error'));
   }
   if (err instanceof Anthropic.APIConnectionError) {
-    return new AiError('Không kết nối được tới Claude. Kiểm tra mạng rồi thử lại.');
+    return new AiError('Could not reach Claude. Check your connection and try again.');
   }
   if (err instanceof Anthropic.APIError) {
-    return new AiError('Claude đang bận hoặc gặp lỗi (' + (err.status || '?') + '). Thử lại sau ít phút.');
+    return new AiError('Claude is busy or had an error (' + (err.status || '?') + '). Try again in a few minutes.');
   }
-  return new AiError('Lỗi: ' + (err && err.message ? err.message : String(err)));
+  return new AiError('Error: ' + (err && err.message ? err.message : String(err)));
 }
 
 function imageBlock(base64Jpeg) {
@@ -311,10 +311,10 @@ async function ask(apiKey, request) {
     throw explain(err);
   }
   if (message.stop_reason === 'refusal') {
-    throw new AiError('Claude không trả lời yêu cầu này. Thử chụp lại hoặc ghi chú rõ hơn.');
+    throw new AiError('Claude did not answer this request. Try another photo or a clearer note.');
   }
   if (message.stop_reason === 'max_tokens' || !message.parsed_output) {
-    throw new AiError('Câu trả lời của Claude bị lỗi định dạng. Thử lại.');
+    throw new AiError('Claude\'s reply was in the wrong format. Try again.');
   }
   const usage = message.usage || {};
   const inputTokens = (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0);
@@ -354,7 +354,7 @@ export function readLabReport(args) {
 export function manualRequest(kind, args) {
   const request = BUILDERS[kind](args);
   const text = [
-    '📋 Yêu cầu từ ứng dụng "Dinh Dưỡng Của Tôi". Hãy làm theo hướng dẫn và trả lời bằng đúng một khối JSON.',
+    '📋 A request from the "My Nutrition" app. Please follow the instructions and reply with exactly one JSON block.',
     '',
     SYSTEM,
     '',
@@ -448,8 +448,8 @@ function extractJson(reply) {
     return best;
   }
   throw new AiError(unclosed
-    ? 'Nội dung đã dán bị thiếu hoặc lỗi (có thể chưa sao chép hết). Hãy sao chép lại toàn bộ câu trả lời.'
-    : 'Không thấy kết quả JSON trong nội dung đã dán. Hãy sao chép toàn bộ câu trả lời của Claude rồi dán lại.');
+    ? 'The pasted text is incomplete or broken (maybe not all of it was copied). Copy the whole reply again.'
+    : 'No JSON result found in the pasted text. Copy Claude\'s whole reply and paste it again.');
 }
 
 function toNumber(v, fallback) {
@@ -482,7 +482,7 @@ const TIDY = {
     }));
     d.warnings = [].concat(d.warnings || []).map((w) => (typeof w === 'string' ? w : w && (w.text || w.message || w.warning) || JSON.stringify(w)));
     d.comment = String(d.comment || '');
-    d.meal_name = String(d.meal_name || d.items.map((i) => i.name).join(', ') || 'Bữa ăn');
+    d.meal_name = String(d.meal_name || d.items.map((i) => i.name).join(', ') || 'Meal');
     if (typeof d.is_food === 'string') {
       d.is_food = !/^(false|no|không)$/i.test(d.is_food.trim());
     } else if (d.is_food === undefined || d.is_food === null) {
@@ -525,7 +525,7 @@ export function parseManualReply(kind, reply) {
   TIDY[kind](data);
   const checked = SCHEMAS[kind].safeParse(data);
   if (!checked.success) {
-    throw new AiError('Câu trả lời của Claude không đúng mẫu. Hãy nhắn Claude "trả lời lại đúng mẫu JSON" rồi sao chép và dán lại.');
+    throw new AiError('Claude\'s reply doesn\'t match the expected format. Ask Claude to "reply again in the exact JSON format", then copy and paste it again.');
   }
   // zod drops keys the schema doesn't name; an old-shape total is kept for mealTotals.
   return kind === 'meal' ? mealTotals(Object.assign(checked.data, data.nutrients ? { nutrients: data.nutrients } : {})) : checked.data;
@@ -541,18 +541,18 @@ const FREE_NAMES = { gemini: 'Gemini', groq: 'Groq', openrouter: 'OpenRouter', c
 function freeError(service, status, message) {
   const name = FREE_NAMES[service];
   if (status === 400 && /api key/i.test(message) || status === 401 || status === 403) {
-    return new AiError(`${name} API key không đúng hoặc chưa được bật. Kiểm tra lại trong Cài đặt.`);
+    return new AiError(`The ${name} API key is wrong or not enabled. Check it in Settings.`);
   }
   if (status === 429) {
-    return new AiError(`Đã hết lượt miễn phí của ${name} (giới hạn mỗi phút/mỗi ngày). Đợi một lát hoặc mai thử lại.`);
+    return new AiError(`${name}'s free allowance is used up (per-minute or per-day limit). Wait a little, or try again tomorrow.`);
   }
   if (status === 413) {
-    return new AiError(`Yêu cầu quá lớn với gói miễn phí của ${name}. Thử với ít ảnh hơn.`);
+    return new AiError(`The request is too large for ${name}'s free plan. Try with fewer photos.`);
   }
   if (status >= 500) {
-    return new AiError(`${name} đang bận hoặc gặp lỗi (${status}). Thử lại sau ít phút.`);
+    return new AiError(`${name} is busy or had an error (${status}). Try again in a few minutes.`);
   }
-  return new AiError(`${name} từ chối yêu cầu: ` + (message || 'lỗi ' + status));
+  return new AiError(`${name} refused the request: ` + (message || 'error ' + status));
 }
 
 async function callJson(service, url, headers, body) {
@@ -564,7 +564,7 @@ async function callJson(service, url, headers, body) {
       body: body ? JSON.stringify(body) : undefined
     });
   } catch (err) {
-    throw new AiError(`Không kết nối được tới ${FREE_NAMES[service]}. Kiểm tra mạng rồi thử lại.`);
+    throw new AiError(`Could not reach ${FREE_NAMES[service]}. Check your connection and try again.`);
   }
   const data = await response.json().catch(() => ({}));
   // Each service words its errors a little differently.
@@ -599,7 +599,7 @@ function parseFreeReply(service, kind, text, model) {
     return parseManualReply(kind, text.replace(/<think>[\s\S]*?<\/think>/g, ''));
   } catch (err) {
     // Naming the model helps tell a one-off slip from a model that never answers in the right shape.
-    throw new AiError(`Câu trả lời của ${FREE_NAMES[service]}${model ? ' (' + model + ')' : ''} bị lỗi định dạng. Thử lại.`);
+    throw new AiError(`${FREE_NAMES[service]}${model ? ' (' + model + ')' : ''} replied in the wrong format. Try again.`);
   }
 }
 
@@ -652,10 +652,10 @@ async function geminiGenerate(apiKey, speed, contents, systemText) {
   }
   const candidate = (answer.data.candidates || [])[0];
   if (!candidate || answer.data.promptFeedback && answer.data.promptFeedback.blockReason) {
-    throw new AiError('Gemini không trả lời yêu cầu này. Thử chụp lại hoặc ghi chú rõ hơn.');
+    throw new AiError('Gemini did not answer this request. Try another photo or a clearer note.');
   }
   if (candidate.finishReason === 'MAX_TOKENS') {
-    throw new AiError('Câu trả lời của Gemini bị cắt ngắn. Thử lại (với ít ảnh hơn).');
+    throw new AiError('Gemini\'s reply was cut off. Try again (with fewer photos).');
   }
   const text = ((candidate.content && candidate.content.parts) || [])
     .filter((p) => p.text && !p.thought)
@@ -696,7 +696,7 @@ async function groqModels(apiKey) {
   const ids = (answer.data.data || []).filter((m) => m.active !== false).map((m) => m.id);
   const model = GROQ_VISION_MODELS.find((id) => ids.includes(id)) || ids.find((id) => GROQ_VISION_HINT.test(id));
   if (!model) {
-    throw new AiError('Groq hiện không có model đọc được ảnh cho key này. Hãy dùng Gemini.');
+    throw new AiError('Groq has no model that reads photos for this key right now. Use Gemini instead.');
   }
   return [model];
 }
@@ -719,7 +719,7 @@ async function openRouterModels(apiKey) {
       && !/safety|guard/i.test(m.id);
   });
   if (!free.length) {
-    throw new AiError('OpenRouter hiện không có model miễn phí nào đọc được ảnh. Hãy dùng Gemini hoặc Groq.');
+    throw new AiError('OpenRouter has no free model that reads photos right now. Use Gemini or Groq instead.');
   }
   free.forEach((m) => {
     if ((m.supported_parameters || []).includes('response_format')) {
@@ -804,10 +804,10 @@ async function chatOnce(service, apiKey, messages, model) {
   const choice = (answer.data.choices || [])[0] || {};
   const text = cfg.replyText ? cfg.replyText(answer.data) : (choice.message || {}).content;
   if (choice.finish_reason === 'length') {
-    return new AiError(`Câu trả lời của ${FREE_NAMES[service]} bị cắt ngắn. Thử lại.`);
+    return new AiError(`${FREE_NAMES[service]}'s reply was cut off. Try again.`);
   }
   if (!text) {
-    return new AiError(`${FREE_NAMES[service]} không trả lời yêu cầu này. Thử lại.`);
+    return new AiError(`${FREE_NAMES[service]} did not answer this request. Try again.`);
   }
   return { text, model: answer.data.model || model };
 }
@@ -878,7 +878,7 @@ async function askChatService(service, kind, args) {
  */
 export async function askFree(service, kind, args) {
   if (!args.apiKey) {
-    throw new AiError(`Chưa có ${FREE_NAMES[service]} API key. Vào Cài đặt để nhập key.`);
+    throw new AiError(`No ${FREE_NAMES[service]} API key yet. Go to Settings to enter one.`);
   }
   const result = await (service === 'gemini' ? askGemini(kind, args) : askChatService(service, kind, args));
   return { result, costUsd: 0 };
@@ -887,7 +887,7 @@ export async function askFree(service, kind, args) {
 /** A tiny request to check a key; resolves to the model that answered and how long it took. */
 export async function testFreeKey(service, apiKey, speed) {
   if (!apiKey) {
-    throw new AiError('Hãy dán API key trước.');
+    throw new AiError('Please paste an API key first.');
   }
   const started = Date.now();
   const question = 'Reply with this JSON object only: {"ok": true}';

@@ -1,8 +1,8 @@
 {
-  "name": "Dinh Dưỡng Của Tôi",
-  "short_name": "Dinh Dưỡng",
-  "description": "Chụp ảnh bữa ăn, AI ước tính dinh dưỡng và gợi ý nên ăn gì tiếp. Dữ liệu chỉ lưu trong trình duyệt của bạn.",
-  "lang": "vi",
+  "name": "My Nutrition",
+  "short_name": "My Nutrition",
+  "description": "Photograph your meals, get AI nutrition estimates and ideas for what to eat next. Your data stays in your browser.",
+  "lang": "en",
   "start_url": "./#today",
   "scope": "./",
   "display": "standalone",
