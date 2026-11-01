@@ -1,12 +1,17 @@
 // The nutrients the app tracks: the meal analysis, the daily targets and the screens all use
 // this one list, so adding a nutrient here is enough for it to show up everywhere.
 // group: 'main' shows on the Today screen straight away; the rest sit under "Vitamins & minerals".
-// limit: true marks nutrients where going OVER the daily maximum is the concern (sodium, sugar...).
+// limit: true marks nutrients where going OVER the daily maximum is the concern (sodium, free sugars...).
+// Sugar is split by source (WHO): free sugars are the ones to limit; sugars inside whole fruit and
+// vegetables, and milk sugar, are not. Total sugar is their sum, kept for information.
 export const NUTRIENTS = [
   { key: 'energy_kcal', name: 'Energy', unit: 'kcal', group: 'main' },
   { key: 'protein_g', name: 'Protein', unit: 'g', group: 'main' },
   { key: 'carbs_g', name: 'Carbohydrate', unit: 'g', group: 'main' },
-  { key: 'sugar_g', name: 'Sugar', unit: 'g', group: 'main', limit: true },
+  { key: 'sugar_g', name: 'Total sugar', unit: 'g', group: 'main' },
+  { key: 'free_sugar_g', name: 'Free sugars', unit: 'g', group: 'main', limit: true },
+  { key: 'fruit_sugar_g', name: 'Fruit & veg sugars', unit: 'g', group: 'main' },
+  { key: 'milk_sugar_g', name: 'Milk sugar', unit: 'g', group: 'main' },
   { key: 'fiber_g', name: 'Fiber', unit: 'g', group: 'main' },
   { key: 'fat_g', name: 'Fat', unit: 'g', group: 'main' },
   { key: 'sat_fat_g', name: 'Saturated fat', unit: 'g', group: 'main', limit: true },
