@@ -649,9 +649,11 @@
 
   var SUGAR_NOTE = '🍬 Only free sugars (added sugar, honey, syrups, juice, soft drinks, sweets) have a limit. '
     + 'Sugar inside whole fruit, vegetables and plain milk doesn\'t count against you.';
+  var PURINE_NOTE = '🫘 Purines from beans, tofu, vegetables, dairy and eggs don\'t raise gout risk; '
+    + 'the ones to limit come from meat, seafood, broths, fish sauce and beer.';
 
   // Nutrients whose rows also list which foods in the meal they come from.
-  var BREAKDOWN_KEYS = ['free_sugar_g', 'sat_fat_g', 'cholesterol_mg'];
+  var BREAKDOWN_KEYS = ['free_sugar_g', 'sat_fat_g', 'cholesterol_mg', 'purine_animal_mg'];
 
   /**
    * Table rows for the given nutrient keys. Items are the meal's foods with their own nutrients
@@ -853,8 +855,8 @@
   }
 
   // Targets made before exercise logging counted workouts in; they need recomputing once.
-  // (Last change: sugar split by source in v1.24, which needs new free-sugar limits.)
-  var TARGET_RULES_CHANGED = '2026-11-01T00:00:00.000Z';
+  // (Last change: purines split by source in v1.25, which needs new purine limits.)
+  var TARGET_RULES_CHANGED = '2026-11-02T00:00:00.000Z';
 
   function targetsStale(targets, profile, labsUpdatedAt) {
     if (!targets) {
@@ -906,7 +908,7 @@
           h('a', { class: 'btn primary', href: '#profile' }, !profile ? 'Enter health profile' : 'Work out daily targets')));
       } else if (targetsStale(targets, profile, r[4])) {
         viewEl.appendChild(h('div', { class: 'card' },
-          h('p', { class: 'muted' }, 'Your profile, lab results or the app\'s target rules (e.g. the new sugar limits) have changed. Your daily targets should be worked out again.'),
+          h('p', { class: 'muted' }, 'Your profile, lab results or the app\'s target rules (e.g. the new sugar and purine limits) have changed. Your daily targets should be worked out again.'),
           h('a', { class: 'btn', href: '#profile' }, 'Recalculate targets')));
       }
 
@@ -916,6 +918,7 @@
         burned && targets ? h('p', { class: 'muted small' }, '🏃 Targets raised by ~' + burned + ' kcal for today\'s exercise.') : null,
         sun ? h('p', { class: 'muted small' }, '☀️ Vitamin D includes ~' + fmt(sun, 'µg') + ' µg made by your skin in the sun.') : null,
         totals.sugar_g > 0 ? h('p', { class: 'muted small' }, SUGAR_NOTE) : null,
+        totals.purine_mg > 0 ? h('p', { class: 'muted small' }, PURINE_NOTE) : null,
         nutrientBars(totals, targets)));
 
       if (isToday) {
@@ -1472,9 +1475,10 @@
         h('h3', null, 'Nutrition (your portion)'),
         targets ? h('p', { class: 'muted small' }, '% = how much of your daily need this meal covers (for nutrients to limit: of the daily maximum).') : null,
         h('table', { class: 'simple' }, h('tbody', null, nutrientRows(
-          ['energy_kcal', 'protein_g', 'carbs_g', 'sugar_g', 'free_sugar_g', 'fruit_sugar_g', 'milk_sugar_g', 'fat_g', 'sat_fat_g', 'cholesterol_mg', 'fiber_g', 'sodium_mg', 'purine_mg'],
+          ['energy_kcal', 'protein_g', 'carbs_g', 'sugar_g', 'free_sugar_g', 'fruit_sugar_g', 'milk_sugar_g', 'fat_g', 'sat_fat_g', 'cholesterol_mg', 'fiber_g', 'sodium_mg', 'purine_mg', 'purine_animal_mg', 'purine_plant_mg'],
           scaled, r.items, p.portion, targets && targets.targets))),
         scaled.sugar_g > 0 ? h('p', { class: 'muted small' }, SUGAR_NOTE) : null,
+        scaled.purine_mg > 0 ? h('p', { class: 'muted small' }, PURINE_NOTE) : null,
         h('h3', null, 'Vitamins & minerals'),
         h('table', { class: 'simple' }, h('tbody', null, nutrientRows(
           NUTRIENTS.filter(function (n) {
@@ -2058,7 +2062,7 @@
       card.appendChild(h('p', { class: 'muted' }, 'The AI works out how much of each nutrient you need (and the maximum) from your profile and lab results.'));
     } else {
       if (targetsStale(targets, profile, labsUpdatedAt)) {
-        card.appendChild(h('div', { class: 'warning' }, 'Your profile, lab results or the app\'s target rules (e.g. the new sugar limits) changed after the last calculation. Worth recalculating.'));
+        card.appendChild(h('div', { class: 'warning' }, 'Your profile, lab results or the app\'s target rules (e.g. the new sugar and purine limits) changed after the last calculation. Worth recalculating.'));
       }
       card.appendChild(h('p', { class: 'muted small' }, 'Calculated on ' + dayTitle(dayKey(new Date(targets.computedAt)))));
       card.appendChild(h('p', null, targets.explanation));
@@ -2406,7 +2410,7 @@
     });
   }
 
-  var APP_VERSION = '1.24';
+  var APP_VERSION = '1.25';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {

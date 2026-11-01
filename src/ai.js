@@ -87,6 +87,9 @@ Sugar is split by source (WHO definitions), and sugar_g is always the sum of the
 - free_sugar_g: sugars added by a manufacturer, cook or the person (table sugar, palm sugar, syrups, condensed-milk sweetening, sweets, cakes, soft drinks, sweetened tea/coffee/milk tea, sweet sauces and dipping sauces made with sugar), PLUS honey, and the sugars in fruit juice, smoothies and blended fruit drinks (even unsweetened). These are the sugars to limit.
 - fruit_sugar_g: sugars inside WHOLE fruit and vegetables, fresh, cooked or dried without added sugar (an orange, banana, mango, tomato, carrot).
 - milk_sugar_g: lactose naturally in plain milk, plain yogurt and cheese (in sweetened milk or yogurt, only the added part is free sugar).
+Purines are split by source, and purine_mg is always the sum of the two:
+- purine_animal_mg: purines from meat, organ meats, fish, shellfish and other seafood, meat/bone/fish broths and stocks (e.g. pho broth), fish sauce, shrimp paste, meat extracts, and beer. These raise uric acid and gout risk.
+- purine_plant_mg: purines from plant foods (beans, lentils, tofu, soy milk, vegetables, mushrooms, whole grains, seaweed, nuts), dairy and eggs. These do not raise gout risk in normal amounts.
 Take the person's health profile and lab results seriously (for example high uric acid → watch purines; high glucose/HbA1c → watch sugar and refined carbs; high LDL → watch saturated fat; kidney markers → watch protein, potassium, phosphorus, sodium).
 You are not a doctor: when a lab value or a pattern looks medically significant, say so briefly and suggest seeing a doctor, without being alarmist.`;
 
@@ -141,7 +144,7 @@ function mealRequest({ imageBase64, note, profile, labs, eatenToday, exercise, n
       'Work item by item:',
       '1. List each food and drink as its own item. Count separately what adds real energy, fat, saturated fat, sodium or cholesterol: cooking oil, lard or butter, fatty meat and skin, coconut milk, sauces and dips, broth that is drunk, eggs, organ meats.',
       '2. Estimate the edible grams of each item as eaten (no bones or shells), using plates, bowls, chopsticks and hands in the photo for scale.',
-      '3. For each item, take its nutrients per 100 g from food-composition data and multiply by grams / 100. Split its sugar into free_sugar_g, fruit_sugar_g and milk_sugar_g as defined above (sugar_g = their sum). Put those numbers in the nutrients of that item. The app adds the items up for the meal total, so do not give a total.',
+      '3. For each item, take its nutrients per 100 g from food-composition data and multiply by grams / 100. Split its sugar into free_sugar_g, fruit_sugar_g and milk_sugar_g, and its purines into purine_animal_mg and purine_plant_mg, as defined above (sugar_g and purine_mg are the sums). Put those numbers in the nutrients of that item. The app adds the items up for the meal total, so do not give a total.',
       'If the photo is not food, set is_food to false and items to an empty list.',
       'meal_name: a short English name for the meal (a Vietnamese dish may keep its name, with English in brackets). confidence: how sure you are about the portions.',
       'comment: 1-3 sentences on how this meal fits this person today (considering their profile, labs and what they already ate).',
@@ -160,24 +163,29 @@ function mealRequest({ imageBase64, note, profile, labs, eatenToday, exercise, n
 }
 
 /** The meal total: the items added up (a reply in the old shape keeps the total it gave). */
-// The three sugar sources add up to total sugar; when a reply gives the split, its total follows it.
-const SUGAR_PARTS = ['free_sugar_g', 'fruit_sugar_g', 'milk_sugar_g'];
+// Sugar and purines are split by source; when a reply gives the split, the total follows it.
+const SPLITS = {
+  sugar_g: ['free_sugar_g', 'fruit_sugar_g', 'milk_sugar_g'],
+  purine_mg: ['purine_animal_mg', 'purine_plant_mg']
+};
 
-function sugarSum(nutrients) {
-  const parts = SUGAR_PARTS.reduce((sum, key) => sum + (nutrients[key] || 0), 0);
-  if (parts > 0) {
-    nutrients.sugar_g = Math.round(parts * 100) / 100;
-  }
+function splitSums(nutrients) {
+  Object.keys(SPLITS).forEach((total) => {
+    const parts = SPLITS[total].reduce((sum, key) => sum + (nutrients[key] || 0), 0);
+    if (parts > 0) {
+      nutrients[total] = Math.round(parts * 100) / 100;
+    }
+  });
 }
 
 function mealTotals(result) {
-  result.items.forEach((i) => i.nutrients && sugarSum(i.nutrients));
+  result.items.forEach((i) => i.nutrients && splitSums(i.nutrients));
   const hasItemNutrients = result.items.some((i) => i.nutrients && Object.values(i.nutrients).some((v) => v > 0));
   if (hasItemNutrients || !result.nutrients) {
     result.nutrients = Object.fromEntries(NUTRIENTS.map((n) => [n.key,
       Math.round(result.items.reduce((sum, i) => sum + (i.nutrients ? i.nutrients[n.key] : 0), 0) * 100) / 100]));
   } else {
-    sugarSum(result.nutrients);
+    splitSums(result.nutrients);
   }
   return result;
 }
@@ -196,6 +204,7 @@ function targetsRequest({ profile, labs, today }) {
       '- max: the most they should have in a day (upper limit, or a lower medical limit when their labs or conditions call for it), or null when there is no meaningful maximum.',
       'Base energy on age, sex, height, weight, activity and goal. Adjust for their lab results and conditions.',
       'Sugars: free_sugar_g gets a max of 10% of daily energy (energy kcal / 40 g), lowered towards 5% (kcal / 80 g) for diabetes or prediabetes, high triglycerides, high uric acid or gout, fatty liver, or a weight-loss goal; min null. sugar_g (total) and milk_sugar_g: min and max null. fruit_sugar_g: min and max null, EXCEPT for diabetes or prediabetes, where it gets a max that keeps whole fruit to about 2-3 servings a day.',
+      'Purines (all min null): purine_animal_mg max 300 for gout, high uric acid or uric-acid kidney stones (the Japanese gout guideline keeps total dietary purines under 400 mg/day; plant purines take the rest), otherwise max 400. purine_plant_mg max 500 for gout or high uric acid (a generous cap that only catches very large amounts), otherwise null. purine_mg (total): max null.',
       'The person logs sport and workouts separately each day, and the app adds the energy of each day\'s exercise on top of these targets. So set the targets for a day WITHOUT sport or workouts: count only the activity of their job and daily life (keep heavy manual work if that is their job), even if activity_level mentions weekly training sessions.',
       'explanation: a short English explanation of the main choices (energy, and anything changed because of labs/conditions).',
       'lab_flags: one entry per lab result that is outside its normal range or worth attention, with simple dietary advice; empty list if none.'
