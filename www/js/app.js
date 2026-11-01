@@ -647,8 +647,8 @@
     ];
   }
 
-  var SUGAR_NOTE = '🍬 Only free sugars (added sugar, honey, syrups, juice, soft drinks, sweets) have a limit. '
-    + 'Sugar inside whole fruit, vegetables and plain milk doesn\'t count against you.';
+  var SUGAR_NOTE = '🍬 Sugar inside whole fruit, vegetables and plain milk is fine; '
+    + 'the sugars to limit are added sugar, honey, syrups, juice, soft drinks and sweets.';
   var PURINE_NOTE = '🫘 Purines from beans, tofu, vegetables, dairy and eggs don\'t raise gout risk; '
     + 'the ones to limit come from meat, seafood, broths, fish sauce and beer.';
 
@@ -855,8 +855,8 @@
   }
 
   // Targets made before exercise logging counted workouts in; they need recomputing once.
-  // (Last change: purines split by source in v1.25, which needs new purine limits.)
-  var TARGET_RULES_CHANGED = '2026-11-02T00:00:00.000Z';
+  // (Last change: v1.26 caps for fruit and milk sugars with some conditions.)
+  var TARGET_RULES_CHANGED = '2026-11-02T12:00:00.000Z';
 
   function targetsStale(targets, profile, labsUpdatedAt) {
     if (!targets) {
@@ -1770,6 +1770,33 @@
     return range.min !== null ? '≥ ' + fmt(range.min, unit) : '≤ ' + fmt(range.max, unit);
   }
 
+  /**
+   * Meals analysed before sugar (v1.24) and purines (v1.25) were split by source have only the totals,
+   * so the by-source rows undercount them; say how many, so the limited rows aren't read as all clear.
+   */
+  function unsplitNote(meals) {
+    function unsplit(m, total, parts) {
+      var n = m.nutrients || {};
+      return (n[total] || 0) > 0 && !parts.some(function (k) {
+        return (n[k] || 0) > 0;
+      });
+    }
+    var sugar = meals.filter(function (m) {
+      return unsplit(m, 'sugar_g', ['free_sugar_g', 'fruit_sugar_g', 'milk_sugar_g']);
+    }).length;
+    var purine = meals.filter(function (m) {
+      return unsplit(m, 'purine_mg', ['purine_animal_mg', 'purine_plant_mg']);
+    }).length;
+    if (!sugar && !purine) {
+      return null;
+    }
+    function part(count, what) {
+      return count ? count + (count === 1 ? ' meal\'s ' : ' meals\' ') + what : null;
+    }
+    return h('p', { class: 'muted small' }, '⚠️ ' + [part(sugar, 'sugars'), part(purine, 'purines')].filter(Boolean).join(' and ')
+      + ' were analysed before they were split by source, so they only count in the totals; the by-source rows are lower than they really were.');
+  }
+
   function renderSummary(from, to) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from || '') || !/^\d{4}-\d{2}-\d{2}$/.test(to || '')) {
       to = dayKey();
@@ -1815,7 +1842,8 @@
           h('li', null, exercises.length + ' exercise entries on ' + workoutDays + (workoutDays === 1 ? ' day' : ' days') + ', burning an extra ~' + burned + ' kcal')),
         mealDays < calendarDays && meals.length
           ? h('p', { class: 'muted small' }, 'Daily averages are over the ' + mealDays + (mealDays === 1 ? ' day' : ' days') + ' with meals logged (a day with nothing logged was probably just forgotten).')
-          : null));
+          : null,
+        unsplitNote(meals)));
 
       if (!meals.length && !exercises.length) {
         viewEl.appendChild(h('p', { class: 'empty' }, 'No data in this period.'));
@@ -2410,7 +2438,7 @@
     });
   }
 
-  var APP_VERSION = '1.25';
+  var APP_VERSION = '1.26';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
