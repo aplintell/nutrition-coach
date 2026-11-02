@@ -668,7 +668,7 @@
     carbs_g: { perGram: 4, advised: '45–65%' },
     fat_g: { perGram: 9, advised: '20–35%' }
   };
-  var ROSE_R = 92;
+  var ROSE_R = 101;
   var ROSE_C = 160;
 
   function roseRadius(pct) {
@@ -754,7 +754,7 @@
         // on top, invisible; the coloured slice lights up while it is active.
         var hit = svg('path', {
           class: 'rose-hit',
-          d: wedgePath(0, ROSE_R + 34, a0 - pad, a1 + pad),
+          d: wedgePath(0, ROSE_R + 38, a0 - pad, a1 + pad),
           role: 'listitem', tabindex: '0',
           'aria-label': f.n.name + ': ' + fmt(totals[k] || 0, f.n.unit) + ' ' + f.n.unit + ', ' + Math.round(f.pct) + '% of target (' + f.target + '). ' + f.words + '.'
         });
@@ -778,12 +778,12 @@
         hits.push(hit);
         // Label outside the slice: short name, and the % under it.
         var mid = (a0 + a1) / 2;
-        var pt = rosePoint(ROSE_R + 16, mid);
+        var pt = rosePoint(ROSE_R + 18, mid);
         // Right half reads outward to the right, left half to the left; only straight up/down is centred.
         var anchor = mid > 4 && mid < 176 ? 'start' : mid > 184 && mid < 356 ? 'end' : 'middle';
-        var name = svg('text', { x: pt[0].toFixed(1), y: (pt[1] - 4).toFixed(1), class: 'rose-name', 'text-anchor': anchor });
+        var name = svg('text', { x: pt[0].toFixed(1), y: (pt[1] - 5).toFixed(1), class: 'rose-name', 'text-anchor': anchor });
         name.textContent = shortName(f.n.name);
-        var pctLabel = svg('text', { x: pt[0].toFixed(1), y: (pt[1] + 10).toFixed(1), class: 'rose-pct', 'text-anchor': anchor });
+        var pctLabel = svg('text', { x: pt[0].toFixed(1), y: (pt[1] + 12).toFixed(1), class: 'rose-pct', 'text-anchor': anchor });
         // Amount / target, like the rings (the % is in the tooltip).
         pctLabel.textContent = fmt(totals[k] || 0, f.n.unit) + ' / ' + fmt(f.ref, f.n.unit) + ' ' + f.n.unit;
         rose.appendChild(name);
@@ -2756,7 +2756,7 @@
     });
   }
 
-  var APP_VERSION = '1.44';
+  var APP_VERSION = '1.45';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {

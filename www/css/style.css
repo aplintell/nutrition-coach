@@ -261,7 +261,7 @@ label.field textarea {
 /* Rose chart: one slice per nutrient, length = % of the daily target. */
 .rose-box {
   position: relative;
-  max-width: 340px;
+  max-width: 374px;
   margin: 0 auto;
 }
 
@@ -299,18 +299,18 @@ label.field textarea {
 
 .rose-name {
   fill: var(--text);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
 }
 
 .rose-pct {
   fill: var(--text-dim);
-  font-size: 12px;
+  font-size: 13.8px;
 }
 
 .rose-inside {
   fill: #06140c;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
   pointer-events: none;
 }
