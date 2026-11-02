@@ -801,6 +801,11 @@
       x += w;
     });
     ring.appendChild(stripes);
+    // The % of the limit in the middle, like the other rings, on a dark badge so it reads on any stripe.
+    ring.appendChild(svg('circle', { class: 'source-badge', cx: 50, cy: 50, r: 19 }));
+    var pctText = svg('text', { x: 50, y: 50, class: 'source-pct', 'text-anchor': 'middle', 'dominant-baseline': 'central' });
+    pctText.textContent = limit ? Math.round(pct) + '%' : '–';
+    ring.appendChild(pctText);
 
     var share = function (part) {
       return total > 0 ? Math.round(part.value / total * 100) : 0;
@@ -2778,7 +2783,7 @@
     });
   }
 
-  var APP_VERSION = '1.34';
+  var APP_VERSION = '1.35';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {

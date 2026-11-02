@@ -393,6 +393,13 @@ label.field textarea {
 }
 
 .sugar-empty { fill: var(--surface-alt); }
+.source-badge { fill: var(--surface); }
+
+.source-pct {
+  fill: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
 .stripe.s1 { fill: #3987e5; }
 .stripe.s2 { fill: #d95926; }
 .stripe.s3 { fill: #199e70; }
