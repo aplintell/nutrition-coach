@@ -693,54 +693,81 @@
     };
   }
 
-  // Sugar has one combined tile. The outer ring is a gauge like the other rings, measuring the
-  // sugar that has a limit, added sugar (free sugars), against that limit: the fill is its % of the
-  // limit, a second lap past 100%, coloured by status. The disc inside is split into vertical stripes
-  // by source (WHO split), showing how total sugar is made up. Targets worked out before the split
-  // (v1.24) have no added-sugar limit; then the WHO limit, 10% of the energy target, stands in.
-  var SUGAR_SOURCES = [
-    { key: 'free_sugar_g', name: 'Added, honey, juice', cls: 's3' },
-    { key: 'fruit_sugar_g', name: 'Whole fruit & veg', cls: 's2' },
-    { key: 'milk_sugar_g', name: 'Milk', cls: 's1' }
-  ];
-  var SUGAR_KEYS = ['sugar_g', 'free_sugar_g', 'fruit_sugar_g', 'milk_sugar_g'];
-
-  /** The added-sugar limit in g: from the targets, or ~10% of the energy target (4 kcal per g). */
-  function addedSugarLimit(ranges) {
-    var r = ranges && ranges.free_sugar_g;
-    if (r && r.max) {
-      return { grams: r.max, estimated: false };
+  // Sugar and purines each have one combined tile. The outer ring is a gauge like the other rings,
+  // measuring the part that has a limit (added sugar; purines from meat, seafood and beer) against
+  // that limit: the fill is its % of the limit, a second lap past 100%, coloured by status. The disc
+  // inside is split into vertical stripes by source, showing how the total is made up. Targets
+  // worked out before the splits (v1.24 / v1.25) have no limit for that part; then a general
+  // limit stands in, marked "~". The limited part is aqua in both tiles.
+  var SOURCE_TILES = [
+    {
+      title: 'Sugar', total: 'sugar_g', unit: 'g', limitName: 'Added sugar',
+      parts: [
+        { key: 'free_sugar_g', name: 'Added, honey, juice', cls: 's3' },
+        { key: 'fruit_sugar_g', name: 'Whole fruit & veg', cls: 's2' },
+        { key: 'milk_sugar_g', name: 'Milk', cls: 's1' }
+      ],
+      // WHO: free sugars under 10% of energy (4 kcal per g).
+      fallback: function (ranges) {
+        var e = ranges && ranges.energy_kcal;
+        var kcal = e && (e.min || e.max);
+        return kcal ? { amount: Math.round(kcal / 40), source: 'the WHO limit', note: '~ WHO limit from your energy target.' } : null;
+      }
+    },
+    {
+      title: 'Purines', total: 'purine_mg', unit: 'mg', limitName: 'Meat & seafood',
+      parts: [
+        { key: 'purine_animal_mg', name: 'Meat, seafood, beer', cls: 's3' },
+        { key: 'purine_plant_mg', name: 'Plants, dairy, eggs', cls: 's2' }
+      ],
+      // A general moderation limit; the personal one is 300 mg with gout or high uric acid.
+      fallback: function (ranges) {
+        return ranges ? { amount: 400, source: 'a general limit', note: '~ General limit (300 mg with gout or high uric acid).' } : null;
+      }
     }
-    var e = ranges && ranges.energy_kcal;
-    var kcal = e && (e.min || e.max);
-    return kcal ? { grams: Math.round(kcal / 40), estimated: true } : null;
+  ];
+  var SOURCE_KEYS = SOURCE_TILES.reduce(function (keys, def) {
+    return keys.concat([def.total], def.parts.map(function (part) {
+      return part.key;
+    }));
+  }, []);
+
+  /** The limit for the tile's first (limited) part: from the targets, or the general fallback. */
+  function sourceLimit(def, ranges) {
+    var r = ranges && ranges[def.parts[0].key];
+    if (r && r.max) {
+      return { amount: r.max, estimated: false, source: 'your limit' };
+    }
+    var f = def.fallback(ranges);
+    return f ? Object.assign({ estimated: true }, f) : null;
   }
 
-  function sugarTile(totals, ranges, tooltip) {
-    var limit = addedSugarLimit(ranges);
-    var parts = SUGAR_SOURCES.map(function (src) {
+  function sourceTile(def, totals, ranges, tooltip) {
+    var u = def.unit;
+    var limit = sourceLimit(def, ranges);
+    var parts = def.parts.map(function (src, i) {
       var range = ranges && ranges[src.key];
       var max = range && range.max ? range.max : null;
-      if (src.key === 'free_sugar_g' && limit) {
-        max = limit.grams;
+      if (i === 0 && limit) {
+        max = limit.amount;
       }
       return Object.assign({ value: totals[src.key] || 0, max: max }, src);
     });
     var partsSum = parts.reduce(function (t, x) {
       return t + x.value;
     }, 0);
-    var total = Math.max(totals.sugar_g || 0, partsSum);
+    var total = Math.max(totals[def.total] || 0, partsSum);
     // Meals saved before the split only have a total: that part shows as a grey stripe.
-    if (total - partsSum >= 0.5) {
+    if (total - partsSum >= (u === 'g' ? 0.5 : 5)) {
       parts.push({ key: null, name: 'Not sorted (older meals)', cls: 'unsorted', value: total - partsSum, max: null });
     }
-    var added = parts[0].value;
-    var pct = limit ? added / limit.grams * 100 : 0;
-    var status = limit ? (added > limit.grams ? 'over' : 'ok') : 'none';
+    var limited = parts[0].value;
+    var pct = limit ? limited / limit.amount * 100 : 0;
+    var status = limit ? (limited > limit.amount ? 'over' : 'ok') : 'none';
     var approx = limit && limit.estimated ? '~' : '';
 
     var ring = svg('svg', { viewBox: '0 0 100 100', class: 'sugar-ring', 'aria-hidden': 'true' });
-    var clipId = 'sugar-clip-' + Math.random().toString(36).slice(2, 8);
+    var clipId = 'source-clip-' + Math.random().toString(36).slice(2, 8);
     var defs = svg('defs');
     var clip = svg('clipPath', { id: clipId });
     clip.appendChild(svg('circle', { cx: 50, cy: 50, r: 34 }));
@@ -779,18 +806,18 @@
       return total > 0 ? Math.round(part.value / total * 100) : 0;
     };
     var amountText = function (part) {
-      return fmt(part.value, 'g') + (part.max !== null ? ' / ' + (part.key === 'free_sugar_g' ? approx : '') + fmt(part.max, 'g') : '') + ' g';
+      return fmt(part.value, u) + (part.max !== null ? ' / ' + (part === parts[0] ? approx : '') + fmt(part.max, u) : '') + ' ' + u;
     };
-    var gaugeText = limit ? 'Added sugar ' + Math.round(pct) + '% of ' + (limit.estimated ? 'the WHO limit' : 'your limit') : 'No sugar limit yet';
-    var statusWords = status === 'over' ? '⬆️ Added sugar over the limit by ' + fmt(added - limit.grams, 'g') + ' g'
-      : status === 'ok' ? '✅ Added sugar within the limit' : '';
-    var label = 'Sugar, ' + fmt(total, 'g') + ' g in total. ' + gaugeText + '. ' + parts.map(function (part) {
-      return part.name + ' ' + amountText(part) + ' (' + share(part) + '% of the sugar)';
+    var gaugeText = limit ? def.limitName + ' ' + Math.round(pct) + '% of ' + limit.source : 'No ' + def.title.toLowerCase() + ' limit yet';
+    var statusWords = status === 'over' ? '⬆️ ' + def.limitName + ' over the limit by ' + fmt(limited - limit.amount, u) + ' ' + u
+      : status === 'ok' ? '✅ ' + def.limitName + ' within the limit' : '';
+    var label = def.title + ', ' + fmt(total, u) + ' ' + u + ' in total. ' + gaugeText + '. ' + parts.map(function (part) {
+      return part.name + ' ' + amountText(part) + ' (' + share(part) + '%)';
     }).join(', ') + '.';
     var tile = h('div', { class: 'ring-tile sugar-tile status-' + status, role: 'listitem', tabindex: '0', 'aria-label': label },
       h('div', { class: 'sugar-ring-box' }, ring),
       h('div', { class: 'sugar-info' },
-        h('div', { class: 'sugar-title' }, 'Sugar', h('span', { class: 'sugar-total' }, fmt(total, 'g') + ' g total')),
+        h('div', { class: 'sugar-title' }, def.title, h('span', { class: 'sugar-total' }, fmt(total, u) + ' ' + u + ' total')),
         h('div', { class: 'sugar-gauge' }, gaugeText),
         parts.map(function (part) {
           return h('div', { class: 'sugar-row' },
@@ -800,10 +827,10 @@
             h('strong', { class: 'sugar-pct' }, share(part) + '%'));
         }),
         limit && limit.estimated
-          ? h('div', { class: 'muted small sugar-note' }, '~ WHO limit from your energy target. Recalculate targets in Profile for your personal limit.')
+          ? h('div', { class: 'muted small sugar-note' }, limit.note + ' Recalculate targets in Profile for your personal limit.')
           : null));
     function show() {
-      tooltip.show(tile, [fmt(total, 'g') + ' g', 'Total sugar', gaugeText].concat(parts.map(function (part) {
+      tooltip.show(tile, [fmt(total, u) + ' ' + u, 'Total ' + def.title.toLowerCase(), gaugeText].concat(parts.map(function (part) {
         return part.name + ': ' + amountText(part) + ' (' + share(part) + '%)';
       }), statusWords ? [statusWords] : []));
     }
@@ -816,7 +843,8 @@
   }
 
   /**
-   * A chart section: a ring for each nutrient that has a daily target (sugar as one combined tile),
+   * A chart section: a ring for each nutrient that has a daily target (sugar and purines as
+   * combined by-source tiles),
    * and a plain list of the ones that don't (no target means nothing to measure a ring against).
    */
   function nutrientChart(title, keys, totals, ranges) {
@@ -824,28 +852,36 @@
       var r = ranges && ranges[k];
       return !!(r && (r.min || r.max));
     };
-    var showSugar = keys.indexOf('sugar_g') !== -1 && SUGAR_KEYS.some(function (k) {
-      return (totals[k] || 0) > 0 || hasTarget(k);
+    // A by-source tile shows when its total is in this chart and there is something to show.
+    var tiles = SOURCE_TILES.filter(function (def) {
+      return keys.indexOf(def.total) !== -1 && [def.total].concat(def.parts.map(function (part) {
+        return part.key;
+      })).some(function (k) {
+        return (totals[k] || 0) > 0 || hasTarget(k);
+      });
     });
     var withTarget = keys.filter(function (k) {
-      return SUGAR_KEYS.indexOf(k) === -1 && hasTarget(k);
+      return SOURCE_KEYS.indexOf(k) === -1 && hasTarget(k);
     });
     var without = keys.filter(function (k) {
-      return SUGAR_KEYS.indexOf(k) === -1 && !hasTarget(k);
+      return SOURCE_KEYS.indexOf(k) === -1 && !hasTarget(k);
     });
     var chart = h('section', { class: 'nchart', 'aria-label': title });
     chart.appendChild(h('h3', null, title));
-    if (withTarget.length || showSugar) {
+    if (withTarget.length || tiles.length) {
       if (withTarget.length) {
         chart.appendChild(h('p', { class: 'muted small nc-legend' }, 'Full ring = 100% of your daily target · a second lap means over 100%'));
       }
       var grid = h('div', { class: 'ring-grid', role: 'list' });
       chart.appendChild(grid);
       var tooltip = chartTooltip(chart);
-      // Keep the nutrient order: the sugar tile sits where the sugars are in the list.
+      // Keep the nutrient order: a by-source tile sits where its nutrients are in the list.
       keys.forEach(function (k) {
-        if (k === 'sugar_g' && showSugar) {
-          grid.appendChild(sugarTile(totals, ranges, tooltip));
+        var def = tiles.filter(function (d) {
+          return d.total === k;
+        })[0];
+        if (def) {
+          grid.appendChild(sourceTile(def, totals, ranges, tooltip));
         } else if (withTarget.indexOf(k) !== -1) {
           grid.appendChild(ringTile(k, totals[k] || 0, ranges[k], tooltip));
         }
@@ -2742,7 +2778,7 @@
     });
   }
 
-  var APP_VERSION = '1.33';
+  var APP_VERSION = '1.34';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
