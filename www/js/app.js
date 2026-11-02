@@ -730,6 +730,7 @@
         weightSum = weights.length;
       }
       var at = 0;
+      var hits = [];
       var inner = 8;
       withTarget.forEach(function (k, i) {
         var f = chartFacts(k, totals[k] || 0, ranges[k]);
@@ -745,19 +746,36 @@
         var slice = svg('path', {
           class: 'rose-slice status-' + f.status,
           d: wedgePath(inner, Math.max(inner + 1, roseRadius(f.pct)), a0, a1),
+          'aria-hidden': 'true'
+        });
+        rose.appendChild(slice);
+        // The tap / hover target is the slice's whole wedge, from the centre out past its label and
+        // across its full angle, so short or thin slices are as easy to hit as long ones. It is drawn
+        // on top, invisible; the coloured slice lights up while it is active.
+        var hit = svg('path', {
+          class: 'rose-hit',
+          d: wedgePath(0, ROSE_R + 34, a0 - pad, a1 + pad),
           role: 'listitem', tabindex: '0',
           'aria-label': f.n.name + ': ' + fmt(totals[k] || 0, f.n.unit) + ' ' + f.n.unit + ', ' + Math.round(f.pct) + '% of target (' + f.target + '). ' + f.words + '.'
         });
         var show = function () {
+          rose.querySelectorAll('.rose-slice.active').forEach(function (el) {
+            el.classList.remove('active');
+          });
+          slice.classList.add('active');
           tooltip.show(box, [fmt(totals[k] || 0, f.n.unit) + ' ' + f.n.unit, f.n.name, Math.round(f.pct) + '% of daily target',
             'Target: ' + f.target, STATUS_TEXT[f.status] + f.words]);
         };
-        slice.addEventListener('pointerenter', show);
-        slice.addEventListener('focus', show);
-        slice.addEventListener('click', show);
-        slice.addEventListener('pointerleave', tooltip.hide);
-        slice.addEventListener('blur', tooltip.hide);
-        rose.appendChild(slice);
+        var hide = function () {
+          slice.classList.remove('active');
+          tooltip.hide();
+        };
+        hit.addEventListener('pointerenter', show);
+        hit.addEventListener('focus', show);
+        hit.addEventListener('click', show);
+        hit.addEventListener('pointerleave', hide);
+        hit.addEventListener('blur', hide);
+        hits.push(hit);
         // Label outside the slice: short name, and the % under it.
         var mid = (a0 + a1) / 2;
         var pt = rosePoint(ROSE_R + 16, mid);
@@ -784,6 +802,9 @@
         }
       });
       rose.appendChild(svg('circle', { class: 'rose-ref', cx: ROSE_C, cy: ROSE_C, r: roseRadius(100).toFixed(2), fill: 'none' }));
+      hits.forEach(function (hit) {
+        rose.appendChild(hit);
+      });
       box.appendChild(rose);
       chart.appendChild(opts.side ? h('div', { class: 'rose-row' }, box, opts.side) : box);
       if (opts.footer !== false) {
@@ -2738,7 +2759,7 @@
     });
   }
 
-  var APP_VERSION = '1.42';
+  var APP_VERSION = '1.43';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {

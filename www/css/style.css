@@ -273,11 +273,24 @@ label.field textarea {
 }
 
 .rose-track { fill: var(--surface-alt); }
-.rose-slice { outline: none; cursor: pointer; }
 .rose-slice.status-ok { fill: var(--ok); }
 .rose-slice.status-under { fill: var(--under); }
 .rose-slice.status-over { fill: var(--over); }
-.rose-slice:hover, .rose-slice:focus-visible { opacity: 0.8; }
+.rose-slice.active { opacity: 0.75; }
+
+/* Invisible tap target over each slice's whole wedge (centre to label). */
+.rose-hit {
+  fill: transparent;
+  pointer-events: all;
+  cursor: pointer;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rose-hit:focus-visible {
+  stroke: var(--info);
+  stroke-width: 2;
+}
 
 .rose-ref {
   stroke: var(--text-dim);
