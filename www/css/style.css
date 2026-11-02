@@ -258,138 +258,157 @@ label.field textarea {
   font-size: 0.92rem;
 }
 
-/* Shared axis above the rows: ticks line up with every track below. */
-.nc-axis-row {
-  margin-bottom: 2px;
+/* Ring gauges: full ring = 100% of the daily target; a second lap past 100%. */
+.nc-legend {
+  margin: -4px 0 8px;
 }
 
-.nc-axis-title {
-  display: block;
-  font-size: 0.7rem;
-  color: var(--text-dim);
-  margin-bottom: 2px;
+.ring-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 6px;
 }
 
-.nc-axis {
-  position: relative;
-  height: 14px;
-  margin-right: 14px;
-  font-size: 0.68rem;
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-}
-
-.nc-axis span {
-  position: absolute;
-  transform: translateX(-50%);
-}
-
-.nc-axis span:first-child {
-  transform: none;
-}
-
-.nc-axis span:last-child {
-  transform: translateX(-100%);
-}
-
-.nc-axis span.major {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.nc-row {
-  padding: 6px 0 7px;
-  border-radius: 8px;
+.ring-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 6px 2px 8px;
+  border-radius: 10px;
   outline: none;
-  cursor: default;
 }
 
-.nc-row:hover,
-.nc-row:focus-visible {
-  background: rgba(255, 255, 255, 0.03);
+.ring-tile:hover,
+.ring-tile:focus-visible {
+  background: rgba(255, 255, 255, 0.04);
 }
 
-.nc-row:focus-visible {
+.ring-tile:focus-visible {
   box-shadow: 0 0 0 2px var(--info);
 }
 
-.nc-head {
+.ring-box {
+  position: relative;
+  width: 70px;
+  height: 70px;
+}
+
+.ring {
+  width: 100%;
+  height: 100%;
+}
+
+.ring circle {
+  stroke-width: 9;
+  stroke-linecap: round;
+}
+
+.ring .ring-track {
+  stroke: var(--surface-alt);
+  stroke-linecap: butt;
+}
+
+.status-ok .ring-fill { stroke: var(--ok); }
+.status-under .ring-fill { stroke: var(--under); }
+.status-over .ring-fill { stroke: var(--over); }
+.ring-fill.lapped { opacity: 0.45; }
+
+.ring-pct {
+  position: absolute;
+  inset: 0;
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 0.85rem;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  font-weight: 700;
 }
 
-.nc-name {
-  min-width: 0;
-  line-height: 1.6;
+.ring-name {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  line-height: 1.25;
 }
 
-.nc-name .chip {
-  white-space: nowrap;
-}
-
-.nc-value {
-  white-space: nowrap;
+.ring-value {
+  margin: 2px 0 4px;
+  font-size: 0.72rem;
+  color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
 
-.nc-pct {
-  color: var(--text-dim);
+.ring-tile .chip {
+  font-size: 0.66rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  line-height: 1.35;
 }
 
-.status-over .nc-value {
+.chip-amount {
+  display: block;
+  white-space: nowrap;
+}
+
+/* Energy pie: where today's energy comes from. */
+.pie-wrap {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.pie {
+  width: 120px;
+  height: 120px;
+  flex: none;
+}
+
+.pie-slice {
+  stroke-width: 24;
+}
+
+.pie-slice.s1, .swatch.s1 { stroke: #3987e5; background: #3987e5; }
+.pie-slice.s2, .swatch.s2 { stroke: #d95926; background: #d95926; }
+.pie-slice.s3, .swatch.s3 { stroke: #199e70; background: #199e70; }
+
+.pie-total {
+  fill: var(--text);
+  font-size: 17px;
   font-weight: 700;
 }
 
-/* The track: target zone (lighter band), the fill, and a hairline at 100%. */
-.nc-track {
-  position: relative;
+.pie-unit {
+  fill: var(--text-dim);
+  font-size: 10px;
+}
+
+.pie-legend {
+  flex: 1;
+  min-width: 0;
+}
+
+.pie-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 0.85rem;
+}
+
+.swatch {
+  width: 10px;
   height: 10px;
-  margin: 6px 14px 0 0;
-  background: var(--surface-alt);
-  border-radius: 0 4px 4px 0;
+  border-radius: 3px;
+  flex: none;
 }
 
-.nc-zone {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  background: rgba(255, 255, 255, 0.16);
+.pie-name {
+  flex: 1;
+  min-width: 0;
 }
 
-.nc-fill {
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  min-width: 2px;
-  border-radius: 0 4px 4px 0;
+.pie-pct {
+  font-variant-numeric: tabular-nums;
 }
-
-.nc-ref {
-  position: absolute;
-  top: -3px;
-  bottom: -3px;
-  width: 1px;
-  background: var(--text-dim);
-}
-
-.nc-beyond {
-  position: absolute;
-  right: -13px;
-  top: 50%;
-  transform: translateY(-52%);
-  font-size: 1rem;
-  font-weight: 700;
-  line-height: 1;
-  color: var(--text);
-}
-
-.status-ok .nc-fill { background: var(--ok); }
-.status-under .nc-fill { background: var(--under); }
-.status-over .nc-fill { background: var(--over); }
 
 /* Status chip: icon + words in text colour on a tint of the status colour. */
 .chip {

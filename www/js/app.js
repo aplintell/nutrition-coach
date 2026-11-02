@@ -595,73 +595,85 @@
 
   // ---- Nutrient charts (Today, past days) ----
   //
-  // Bullet-style bars on one shared axis: each nutrient as a % of its own daily target, so energy,
-  // grams and µg can sit side by side. The track shows the target zone (min → max, or 0 → limit),
-  // a hairline marks 100%, and the fill is coloured by status. Status never rides on colour
-  // alone: every row also says it in words with an icon, and an "over" bar visibly passes the
-  // end of its zone.
-  var CHART_MAX_PCT = 150;
+  // One ring gauge per nutrient: a full ring is 100% of that nutrient's own daily target, so energy,
+  // grams and µg read the same way. Past 100%, a second lap is drawn over the first. The fill is
+  // coloured by status, and status never rides on colour alone: every tile also says it in words
+  // with an icon. Above them, a pie shows the one real part-to-whole: where the energy comes from.
   var STATUS_TEXT = { ok: '✅ ', under: '⬇️ ', over: '⬆️ ' };
+  var SVG_NS = 'http://www.w3.org/2000/svg';
 
-  function pctOfAxis(pct) {
-    return Math.max(0, Math.min(pct, CHART_MAX_PCT)) / CHART_MAX_PCT * 100;
+  function svg(tag, attrs) {
+    var el = document.createElementNS(SVG_NS, tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      el.setAttribute(k, attrs[k]);
+    });
+    return el;
   }
 
-  /** What a nutrient's row says about it: status words, % of the reference, and the target text. */
+  /** What a nutrient's tile says about it: status words, % of the reference, and the target text. */
   function chartFacts(key, value, range) {
     var n = NUTRIENT_BY_KEY[key];
     var status = statusOf(value, range);
     var ref = range.min !== null ? range.min : range.max;
     var pct = ref ? value / ref * 100 : 0;
     var words;
+    var amount = null;
     if (status === 'over') {
-      words = 'Over by ' + fmtAmount(key, value - range.max);
+      amount = fmtAmount(key, value - range.max);
+      words = 'Over by ' + amount;
     } else if (status === 'under') {
-      words = 'Short by ' + fmtAmount(key, range.min - value);
+      amount = fmtAmount(key, range.min - value);
+      words = 'Short by ' + amount;
     } else {
       words = range.min !== null ? 'Met' : 'Within limit';
     }
     var target = range.min !== null && range.max !== null ? fmt(range.min, n.unit) + '–' + fmt(range.max, n.unit)
       : range.min !== null ? 'at least ' + fmt(range.min, n.unit) : 'at most ' + fmt(range.max, n.unit);
-    return { n: n, status: status, ref: ref, pct: pct, words: words, target: target + ' ' + n.unit };
+    return { n: n, status: status, ref: ref, pct: pct, words: words, amount: amount, target: target + ' ' + n.unit };
   }
 
-  function chartRow(key, value, range, tooltip) {
+  var RING_R = 30;
+  var RING_C = 2 * Math.PI * RING_R;
+
+  /** An arc of the ring covering `share` (0–1) of the circle, starting at 12 o'clock. */
+  function ringArc(share, cls) {
+    return svg('circle', {
+      class: cls, cx: 40, cy: 40, r: RING_R, fill: 'none',
+      'stroke-dasharray': (Math.max(0, Math.min(share, 1)) * RING_C).toFixed(2) + ' ' + RING_C.toFixed(2),
+      transform: 'rotate(-90 40 40)'
+    });
+  }
+
+  function ringTile(key, value, range, tooltip) {
     var f = chartFacts(key, value, range);
-    var zoneFrom = range.min !== null ? 100 : 0;
-    var zoneTo = range.max !== null ? range.max / f.ref * 100 : CHART_MAX_PCT;
-    var track = h('div', { class: 'nc-track' });
-    var zone = h('span', { class: 'nc-zone' });
-    zone.style.left = pctOfAxis(zoneFrom) + '%';
-    zone.style.width = Math.max(0, pctOfAxis(zoneTo) - pctOfAxis(zoneFrom)) + '%';
-    var fill = h('span', { class: 'nc-fill' });
-    fill.style.width = pctOfAxis(f.pct) + '%';
-    var refLine = h('span', { class: 'nc-ref' });
-    refLine.style.left = pctOfAxis(100) + '%';
-    track.appendChild(zone);
-    track.appendChild(fill);
-    track.appendChild(refLine);
-    var beyond = f.pct > CHART_MAX_PCT;
-    if (beyond) {
-      track.appendChild(h('span', { class: 'nc-beyond', 'aria-hidden': 'true' }, '›'));
+    var ring = svg('svg', { viewBox: '0 0 80 80', class: 'ring', 'aria-hidden': 'true' });
+    ring.appendChild(svg('circle', { class: 'ring-track', cx: 40, cy: 40, r: RING_R, fill: 'none' }));
+    if (f.pct > 0) {
+      // First lap up to 100%; past that it dims and a second lap shows how far over.
+      ring.appendChild(ringArc(f.pct / 100, 'ring-fill' + (f.pct > 100 ? ' lapped' : '')));
+      if (f.pct > 100) {
+        ring.appendChild(ringArc((f.pct - 100) / 100, 'ring-fill lap2'));
+      }
     }
     var label = f.n.name + ': ' + fmt(value, f.n.unit) + ' ' + f.n.unit + ', ' + Math.round(f.pct) + '% of target (' + f.target + '). ' + f.words + '.';
-    var row = h('div', { class: 'nc-row status-' + f.status + (beyond ? ' beyond' : ''), role: 'listitem', tabindex: '0', 'aria-label': label },
-      h('div', { class: 'nc-head' },
-        h('span', { class: 'nc-name' }, f.n.name + ' ', h('span', { class: 'chip ' + f.status }, STATUS_TEXT[f.status] + f.words)),
-        h('span', { class: 'nc-value' }, fmt(value, f.n.unit) + ' / ' + fmt(f.ref, f.n.unit) + ' ' + f.n.unit,
-          h('span', { class: 'nc-pct' }, ' · ' + Math.round(f.pct) + '%'))),
-      track);
+    var tile = h('div', { class: 'ring-tile status-' + f.status, role: 'listitem', tabindex: '0', 'aria-label': label },
+      h('div', { class: 'ring-box' }, ring, h('span', { class: 'ring-pct' }, Math.round(f.pct) + '%')),
+      h('div', { class: 'ring-name' }, f.n.name),
+      h('div', { class: 'ring-value' }, fmt(value, f.n.unit) + ' / ' + fmt(f.ref, f.n.unit) + ' ' + f.n.unit),
+      // In a narrow tile the amount gets its own line, so a chip never breaks in the middle of it.
+      h('span', { class: 'chip ' + f.status }, f.amount
+        ? [STATUS_TEXT[f.status] + f.words.slice(0, -f.amount.length).trim(), h('span', { class: 'chip-amount' }, f.amount)]
+        : STATUS_TEXT[f.status] + f.words));
     function show() {
-      tooltip.show(row, [fmt(value, f.n.unit) + ' ' + f.n.unit, f.n.name, Math.round(f.pct) + '% of daily target',
+      tooltip.show(tile, [fmt(value, f.n.unit) + ' ' + f.n.unit, f.n.name, Math.round(f.pct) + '% of daily target',
         'Target: ' + f.target, STATUS_TEXT[f.status] + f.words]);
     }
-    row.addEventListener('pointerenter', show);
-    row.addEventListener('focus', show);
-    row.addEventListener('click', show);
-    row.addEventListener('pointerleave', tooltip.hide);
-    row.addEventListener('blur', tooltip.hide);
-    return row;
+    tile.addEventListener('pointerenter', show);
+    tile.addEventListener('focus', show);
+    tile.addEventListener('click', show);
+    tile.addEventListener('pointerleave', tooltip.hide);
+    tile.addEventListener('blur', tooltip.hide);
+    return tile;
   }
 
   /** One floating tooltip per chart; its text is set with textContent only. */
@@ -669,14 +681,14 @@
     var tip = h('div', { class: 'nc-tip', role: 'tooltip', hidden: true });
     chart.appendChild(tip);
     return {
-      show: function (row, lines) {
+      show: function (el, lines) {
         tip.textContent = '';
         lines.forEach(function (line, i) {
           tip.appendChild(h(i === 0 ? 'strong' : 'div', null, line));
         });
         tip.hidden = false;
-        var top = row.offsetTop - tip.offsetHeight - 6;
-        tip.style.top = (top < 0 ? row.offsetTop + row.offsetHeight + 6 : top) + 'px';
+        var top = el.offsetTop - tip.offsetHeight - 6;
+        tip.style.top = (top < 0 ? el.offsetTop + el.offsetHeight + 6 : top) + 'px';
       },
       hide: function () {
         tip.hidden = true;
@@ -685,8 +697,8 @@
   }
 
   /**
-   * A chart card section: rows for the nutrients that have a daily target, and a plain list of the
-   * ones that don't (no target means nothing to measure a bar against).
+   * A chart section: a ring for each nutrient that has a daily target, and a plain list of the ones
+   * that don't (no target means nothing to measure a ring against).
    */
   function nutrientChart(title, keys, totals, ranges) {
     var withTarget = keys.filter(function (k) {
@@ -699,18 +711,12 @@
     var chart = h('section', { class: 'nchart', 'aria-label': title });
     chart.appendChild(h('h3', null, title));
     if (withTarget.length) {
-      var axis = h('div', { class: 'nc-axis', 'aria-hidden': 'true' });
-      [0, 50, 100, 150].forEach(function (t) {
-        var tick = h('span', { class: t === 100 ? 'major' : '' }, t + '%');
-        tick.style.left = pctOfAxis(t) + '%';
-        axis.appendChild(tick);
-      });
-      chart.appendChild(h('div', { class: 'nc-axis-row' }, h('span', { class: 'nc-axis-title' }, '% of daily target'), axis));
-      var list = h('div', { class: 'nc-rows', role: 'list' });
-      chart.appendChild(list);
+      chart.appendChild(h('p', { class: 'muted small nc-legend' }, 'Full ring = 100% of your daily target · a second lap means over 100%'));
+      var grid = h('div', { class: 'ring-grid', role: 'list' });
+      chart.appendChild(grid);
       var tooltip = chartTooltip(chart);
       withTarget.forEach(function (k) {
-        list.appendChild(chartRow(k, totals[k] || 0, ranges[k], tooltip));
+        grid.appendChild(ringTile(k, totals[k] || 0, ranges[k], tooltip));
       });
     }
     if (without.length) {
@@ -723,6 +729,63 @@
     return chart;
   }
 
+  // Where the energy comes from (kcal per gram: carbs 4, protein 4, fat 9), with the ranges
+  // usually advised for adults. Colours are the first three validated categorical slots.
+  var ENERGY_PARTS = [
+    { key: 'carbs_g', name: 'Carbohydrate', perGram: 4, range: '45–65%', cls: 's1' },
+    { key: 'protein_g', name: 'Protein', perGram: 4, range: '10–35%', cls: 's2' },
+    { key: 'fat_g', name: 'Fat', perGram: 9, range: '20–35%', cls: 's3' }
+  ];
+
+  function energyPie(totals) {
+    var parts = ENERGY_PARTS.map(function (p) {
+      return Object.assign({ kcal: (totals[p.key] || 0) * p.perGram }, p);
+    });
+    var sum = parts.reduce(function (t, p) {
+      return t + p.kcal;
+    }, 0);
+    if (!sum) {
+      return null;
+    }
+    var pie = svg('svg', { viewBox: '0 0 120 120', class: 'pie', role: 'img',
+      'aria-label': 'Energy from ' + parts.map(function (p) {
+        return p.name.toLowerCase() + ' ' + Math.round(p.kcal / sum * 100) + '%';
+      }).join(', ') });
+    var r = 42;
+    var c = 2 * Math.PI * r;
+    var gap = 2;
+    var start = 0;
+    parts.forEach(function (p) {
+      var len = p.kcal / sum * c;
+      if (len > gap) {
+        // Each slice is an arc of a thick ring; a 2px surface gap separates neighbours.
+        pie.appendChild(svg('circle', {
+          class: 'pie-slice ' + p.cls, cx: 60, cy: 60, r: r, fill: 'none',
+          'stroke-dasharray': (len - gap).toFixed(2) + ' ' + c.toFixed(2),
+          'stroke-dashoffset': (-start).toFixed(2),
+          transform: 'rotate(-90 60 60)'
+        }));
+      }
+      start += len;
+    });
+    var centre = svg('text', { x: 60, y: 57, class: 'pie-total', 'text-anchor': 'middle' });
+    centre.textContent = fmt(sum, 'kcal');
+    var unit = svg('text', { x: 60, y: 72, class: 'pie-unit', 'text-anchor': 'middle' });
+    unit.textContent = 'kcal';
+    pie.appendChild(centre);
+    pie.appendChild(unit);
+    return h('section', { class: 'nchart energy-pie', 'aria-label': 'Where today\'s energy comes from' },
+      h('h3', null, 'Where the energy comes from'),
+      h('div', { class: 'pie-wrap' },
+        pie,
+        h('div', { class: 'pie-legend', role: 'list' }, parts.map(function (p) {
+          return h('div', { class: 'pie-row', role: 'listitem' },
+            h('span', { class: 'swatch ' + p.cls, 'aria-hidden': 'true' }),
+            h('span', { class: 'pie-name' }, p.name, h('div', { class: 'muted small' }, 'advised ' + p.range)),
+            h('strong', { class: 'pie-pct' }, Math.round(p.kcal / sum * 100) + '%'));
+        }))));
+  }
+
   function nutrientBars(totals, targets) {
     var ranges = targets ? targets.targets : null;
     function keysOf(group) {
@@ -733,6 +796,7 @@
       });
     }
     return [
+      energyPie(totals),
       nutrientChart('Main nutrients', keysOf('main'), totals, ranges),
       nutrientChart('Vitamins & minerals', keysOf('micro'), totals, ranges)
     ];
@@ -2529,7 +2593,7 @@
     });
   }
 
-  var APP_VERSION = '1.27';
+  var APP_VERSION = '1.28';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
