@@ -593,57 +593,148 @@
     return 'ok';
   }
 
-  function nutrientBar(key, value, range) {
+  // ---- Nutrient charts (Today, past days) ----
+  //
+  // Bullet-style bars on one shared axis: each nutrient as a % of its own daily target, so energy,
+  // grams and µg can sit side by side. The track shows the target zone (min → max, or 0 → limit),
+  // a hairline marks 100%, and the fill is coloured by status. Status never rides on colour
+  // alone: every row also says it in words with an icon, and an "over" bar visibly passes the
+  // end of its zone.
+  var CHART_MAX_PCT = 150;
+  var STATUS_TEXT = { ok: '✅ ', under: '⬇️ ', over: '⬆️ ' };
+
+  function pctOfAxis(pct) {
+    return Math.max(0, Math.min(pct, CHART_MAX_PCT)) / CHART_MAX_PCT * 100;
+  }
+
+  /** What a nutrient's row says about it: status words, % of the reference, and the target text. */
+  function chartFacts(key, value, range) {
     var n = NUTRIENT_BY_KEY[key];
     var status = statusOf(value, range);
-    var ref = range ? (range.min !== null ? range.min : range.max) : null;
-    var pct = ref ? Math.min(100, value / ref * 100) : 0;
-    var valueText = fmt(value, n.unit) + (ref !== null && ref !== undefined ? ' / ' + fmt(ref, n.unit) : '') + ' ' + n.unit;
-    var tag = null;
+    var ref = range.min !== null ? range.min : range.max;
+    var pct = ref ? value / ref * 100 : 0;
+    var words;
     if (status === 'over') {
-      tag = h('span', { class: 'tag over' }, 'Over by ' + fmtAmount(key, value - range.max));
+      words = 'Over by ' + fmtAmount(key, value - range.max);
     } else if (status === 'under') {
-      tag = h('span', { class: 'tag under' }, 'Short by ' + fmtAmount(key, range.min - value));
-    } else if (status === 'ok') {
-      tag = h('span', { class: 'tag ok' }, range.min !== null ? 'Met' : 'Within limit');
+      words = 'Short by ' + fmtAmount(key, range.min - value);
+    } else {
+      words = range.min !== null ? 'Met' : 'Within limit';
     }
-    var bar = h('div', { class: 'bar' });
-    var fill = h('span');
-    fill.style.width = pct + '%';
-    bar.appendChild(fill);
-    return h('div', { class: 'nutrient status-' + status },
-      h('div', { class: 'nutrient-head' },
-        h('span', null, n.name, tag),
-        h('span', { class: 'value' }, valueText)),
-      bar);
+    var target = range.min !== null && range.max !== null ? fmt(range.min, n.unit) + '–' + fmt(range.max, n.unit)
+      : range.min !== null ? 'at least ' + fmt(range.min, n.unit) : 'at most ' + fmt(range.max, n.unit);
+    return { n: n, status: status, ref: ref, pct: pct, words: words, target: target + ' ' + n.unit };
+  }
+
+  function chartRow(key, value, range, tooltip) {
+    var f = chartFacts(key, value, range);
+    var zoneFrom = range.min !== null ? 100 : 0;
+    var zoneTo = range.max !== null ? range.max / f.ref * 100 : CHART_MAX_PCT;
+    var track = h('div', { class: 'nc-track' });
+    var zone = h('span', { class: 'nc-zone' });
+    zone.style.left = pctOfAxis(zoneFrom) + '%';
+    zone.style.width = Math.max(0, pctOfAxis(zoneTo) - pctOfAxis(zoneFrom)) + '%';
+    var fill = h('span', { class: 'nc-fill' });
+    fill.style.width = pctOfAxis(f.pct) + '%';
+    var refLine = h('span', { class: 'nc-ref' });
+    refLine.style.left = pctOfAxis(100) + '%';
+    track.appendChild(zone);
+    track.appendChild(fill);
+    track.appendChild(refLine);
+    var beyond = f.pct > CHART_MAX_PCT;
+    if (beyond) {
+      track.appendChild(h('span', { class: 'nc-beyond', 'aria-hidden': 'true' }, '›'));
+    }
+    var label = f.n.name + ': ' + fmt(value, f.n.unit) + ' ' + f.n.unit + ', ' + Math.round(f.pct) + '% of target (' + f.target + '). ' + f.words + '.';
+    var row = h('div', { class: 'nc-row status-' + f.status + (beyond ? ' beyond' : ''), role: 'listitem', tabindex: '0', 'aria-label': label },
+      h('div', { class: 'nc-head' },
+        h('span', { class: 'nc-name' }, f.n.name + ' ', h('span', { class: 'chip ' + f.status }, STATUS_TEXT[f.status] + f.words)),
+        h('span', { class: 'nc-value' }, fmt(value, f.n.unit) + ' / ' + fmt(f.ref, f.n.unit) + ' ' + f.n.unit,
+          h('span', { class: 'nc-pct' }, ' · ' + Math.round(f.pct) + '%'))),
+      track);
+    function show() {
+      tooltip.show(row, [fmt(value, f.n.unit) + ' ' + f.n.unit, f.n.name, Math.round(f.pct) + '% of daily target',
+        'Target: ' + f.target, STATUS_TEXT[f.status] + f.words]);
+    }
+    row.addEventListener('pointerenter', show);
+    row.addEventListener('focus', show);
+    row.addEventListener('click', show);
+    row.addEventListener('pointerleave', tooltip.hide);
+    row.addEventListener('blur', tooltip.hide);
+    return row;
+  }
+
+  /** One floating tooltip per chart; its text is set with textContent only. */
+  function chartTooltip(chart) {
+    var tip = h('div', { class: 'nc-tip', role: 'tooltip', hidden: true });
+    chart.appendChild(tip);
+    return {
+      show: function (row, lines) {
+        tip.textContent = '';
+        lines.forEach(function (line, i) {
+          tip.appendChild(h(i === 0 ? 'strong' : 'div', null, line));
+        });
+        tip.hidden = false;
+        var top = row.offsetTop - tip.offsetHeight - 6;
+        tip.style.top = (top < 0 ? row.offsetTop + row.offsetHeight + 6 : top) + 'px';
+      },
+      hide: function () {
+        tip.hidden = true;
+      }
+    };
+  }
+
+  /**
+   * A chart card section: rows for the nutrients that have a daily target, and a plain list of the
+   * ones that don't (no target means nothing to measure a bar against).
+   */
+  function nutrientChart(title, keys, totals, ranges) {
+    var withTarget = keys.filter(function (k) {
+      var r = ranges && ranges[k];
+      return r && (r.min || r.max);
+    });
+    var without = keys.filter(function (k) {
+      return withTarget.indexOf(k) === -1;
+    });
+    var chart = h('section', { class: 'nchart', 'aria-label': title });
+    chart.appendChild(h('h3', null, title));
+    if (withTarget.length) {
+      var axis = h('div', { class: 'nc-axis', 'aria-hidden': 'true' });
+      [0, 50, 100, 150].forEach(function (t) {
+        var tick = h('span', { class: t === 100 ? 'major' : '' }, t + '%');
+        tick.style.left = pctOfAxis(t) + '%';
+        axis.appendChild(tick);
+      });
+      chart.appendChild(h('div', { class: 'nc-axis-row' }, h('span', { class: 'nc-axis-title' }, '% of daily target'), axis));
+      var list = h('div', { class: 'nc-rows', role: 'list' });
+      chart.appendChild(list);
+      var tooltip = chartTooltip(chart);
+      withTarget.forEach(function (k) {
+        list.appendChild(chartRow(k, totals[k] || 0, ranges[k], tooltip));
+      });
+    }
+    if (without.length) {
+      chart.appendChild(h('div', { class: 'nc-free' },
+        h('div', { class: 'muted small' }, withTarget.length ? 'No daily target' : 'No daily targets yet — work them out in Profile to see these against your needs'),
+        h('table', { class: 'simple' }, h('tbody', null, without.map(function (k) {
+          return h('tr', null, h('td', null, NUTRIENT_BY_KEY[k].name), h('td', null, fmtAmount(k, totals[k] || 0)));
+        })))));
+    }
+    return chart;
   }
 
   function nutrientBars(totals, targets) {
     var ranges = targets ? targets.targets : null;
-    var main = NUTRIENTS.filter(function (n) {
-      return n.group === 'main';
-    });
-    var micro = NUTRIENTS.filter(function (n) {
-      return n.group !== 'main';
-    });
-    var microBox = h('div', { hidden: true },
-      micro.map(function (n) {
-        return nutrientBar(n.key, totals[n.key], ranges && ranges[n.key]);
-      }));
-    var toggle = h('button', {
-      class: 'link-btn',
-      type: 'button',
-      onclick: function () {
-        microBox.hidden = !microBox.hidden;
-        toggle.textContent = microBox.hidden ? '▸ Vitamins & minerals' : '▾ Hide vitamins & minerals';
-      }
-    }, '▸ Vitamins & minerals');
+    function keysOf(group) {
+      return NUTRIENTS.filter(function (n) {
+        return group === 'main' ? n.group === 'main' : n.group !== 'main';
+      }).map(function (n) {
+        return n.key;
+      });
+    }
     return [
-      main.map(function (n) {
-        return nutrientBar(n.key, totals[n.key], ranges && ranges[n.key]);
-      }),
-      toggle,
-      microBox
+      nutrientChart('Main nutrients', keysOf('main'), totals, ranges),
+      nutrientChart('Vitamins & minerals', keysOf('micro'), totals, ranges)
     ];
   }
 
@@ -2438,7 +2529,7 @@
     });
   }
 
-  var APP_VERSION = '1.26';
+  var APP_VERSION = '1.27';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {

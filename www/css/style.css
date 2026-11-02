@@ -240,47 +240,200 @@ label.field textarea {
   margin: 16px 0 0;
 }
 
-/* ---- Nutrient bars ---- */
+/* ---- Nutrient charts: each nutrient as a % of its daily target ---- */
 
-.nutrient {
-  margin: 10px 0;
+.nchart {
+  position: relative;
+  margin-top: 6px;
 }
 
-.nutrient-head {
+.nchart + .nchart {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.nchart h3 {
+  margin: 0 0 8px;
+  font-size: 0.92rem;
+}
+
+/* Shared axis above the rows: ticks line up with every track below. */
+.nc-axis-row {
+  margin-bottom: 2px;
+}
+
+.nc-axis-title {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+
+.nc-axis {
+  position: relative;
+  height: 14px;
+  margin-right: 14px;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.nc-axis span {
+  position: absolute;
+  transform: translateX(-50%);
+}
+
+.nc-axis span:first-child {
+  transform: none;
+}
+
+.nc-axis span:last-child {
+  transform: translateX(-100%);
+}
+
+.nc-axis span.major {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.nc-row {
+  padding: 6px 0 7px;
+  border-radius: 8px;
+  outline: none;
+  cursor: default;
+}
+
+.nc-row:hover,
+.nc-row:focus-visible {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.nc-row:focus-visible {
+  box-shadow: 0 0 0 2px var(--info);
+}
+
+.nc-head {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: 8px;
   font-size: 0.85rem;
 }
 
-.nutrient-head .value {
-  font-variant-numeric: tabular-nums;
+.nc-name {
+  min-width: 0;
+  line-height: 1.6;
+}
+
+.nc-name .chip {
   white-space: nowrap;
 }
 
-.bar {
-  position: relative;
-  height: 8px;
-  margin-top: 5px;
-  background: var(--surface-alt);
-  border-radius: 4px;
-  overflow: hidden;
+.nc-value {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-.bar span {
+.nc-pct {
+  color: var(--text-dim);
+}
+
+.status-over .nc-value {
+  font-weight: 700;
+}
+
+/* The track: target zone (lighter band), the fill, and a hairline at 100%. */
+.nc-track {
+  position: relative;
+  height: 10px;
+  margin: 6px 14px 0 0;
+  background: var(--surface-alt);
+  border-radius: 0 4px 4px 0;
+}
+
+.nc-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.nc-fill {
   position: absolute;
   left: 0;
   top: 0;
   bottom: 0;
-  border-radius: 4px;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
 }
 
-.status-ok .bar span { background: var(--ok); }
-.status-under .bar span { background: var(--under); }
-.status-over .bar span { background: var(--over); }
-.status-none .bar span { background: var(--info); }
+.nc-ref {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 1px;
+  background: var(--text-dim);
+}
 
-.status-over .nutrient-head .value { color: var(--over); font-weight: 700; }
+.nc-beyond {
+  position: absolute;
+  right: -13px;
+  top: 50%;
+  transform: translateY(-52%);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+}
+
+.status-ok .nc-fill { background: var(--ok); }
+.status-under .nc-fill { background: var(--under); }
+.status-over .nc-fill { background: var(--over); }
+
+/* Status chip: icon + words in text colour on a tint of the status colour. */
+.chip {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.chip.ok { background: rgba(47, 191, 113, 0.18); }
+.chip.under { background: rgba(242, 179, 61, 0.2); }
+.chip.over { background: rgba(255, 92, 92, 0.22); }
+
+.nc-tip {
+  position: absolute;
+  right: 0;
+  z-index: 5;
+  min-width: 170px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #0b100e;
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+
+.nc-tip strong {
+  display: block;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.nc-free {
+  margin-top: 10px;
+}
+
+.nc-free table.simple {
+  margin-top: 2px;
+}
 
 .tag {
   display: inline-block;
