@@ -696,10 +696,9 @@
 
   /**
    * opts.weight(key): when given, each slice's angle is its share of the weights (e.g. the energy each
-   * macronutrient supplies) instead of all slices being equal. opts.footer replaces the note under
-   * the chart; opts.inside(key) gives text to print inside the slice (only where it fits);
-   * opts.after is an element shown under the chart, opts.side one beside it; footer: false hides
-   * the note.
+   * macronutrient supplies) instead of all slices being equal. opts.inside(key) gives text to print
+   * inside the slice (only where it fits); opts.after is an element shown under the chart, opts.side
+   * one beside it.
    */
   function roseChart(title, keys, shortName, totals, ranges, opts) {
     opts = opts || {};
@@ -807,9 +806,6 @@
       });
       box.appendChild(rose);
       chart.appendChild(opts.side ? h('div', { class: 'rose-row' }, box, opts.side) : box);
-      if (opts.footer !== false) {
-        chart.appendChild(h('p', { class: 'muted small rose-legend' }, opts.footer || 'Circle = 100% of your daily target · tap a slice for details'));
-      }
       if (opts.after) {
         chart.appendChild(opts.after);
       }
@@ -874,7 +870,6 @@
    */
   function withFallbackLimits(ranges) {
     var out = Object.assign({}, ranges);
-    var used = [];
     var hasMax = function (k) {
       return !!(out[k] && out[k].max);
     };
@@ -883,14 +878,12 @@
       var kcal = e && (e.min || e.max);
       if (kcal) {
         out.free_sugar_g = { min: null, max: Math.round(kcal / 40) };
-        used.push('added sugar ~' + Math.round(kcal / 40) + ' g (WHO, 10% of your energy target)');
       }
     }
     if (ranges && !hasMax('purine_animal_mg')) {
       out.purine_animal_mg = { min: null, max: 400 };
-      used.push('meat/seafood purines ~400 mg (300 mg with gout or high uric acid)');
     }
-    return { ranges: out, used: used };
+    return out;
   }
 
   function infoTable(totals, ranges) {
@@ -941,22 +934,14 @@
         side: energyColumn(totals, ranges),
         // Short labels: a tighter frame lets the rose fill more of its half.
         viewBox: '-20 26 380 268',
-        footer: false,
         after: macroSum > 0 ? advisedTable : null
       }),
-      (function () {
-        var main = withFallbackLimits(ranges);
-        return roseChart('Main nutrients', MAIN_ROSE_KEYS, function (name) {
-          var key = NUTRIENTS.filter(function (n) {
-            return n.name === name;
-          })[0].key;
-          return MAIN_SHORT[key] || name;
-        }, totals, main.ranges, {
-          footer: 'Circle = 100% of your daily target · tap a slice for details'
-            + (main.used.length ? '. ~ General limits for ' + main.used.join(' and ') + '; recalculate targets in Profile for yours.' : ''),
-          after: infoTable(totals, ranges)
-        });
-      }()),
+      roseChart('Main nutrients', MAIN_ROSE_KEYS, function (name) {
+        var key = NUTRIENTS.filter(function (n) {
+          return n.name === name;
+        })[0].key;
+        return MAIN_SHORT[key] || name;
+      }, totals, withFallbackLimits(ranges), { after: infoTable(totals, ranges) }),
       roseChart('Vitamins', keysOf('micro').filter(isVitamin), function (name) {
         return name.replace(/^Vitamin /, '').replace(/ \(B9\)$/, '');
       }, totals, ranges),
@@ -1218,7 +1203,6 @@
       var plan = r[2];
       var profile = r[3];
       var totals = dayIntake(meals, exercises);
-      var sun = sunFromExercises(exercises);
 
       if (!profile || !targets) {
         viewEl.appendChild(h('div', { class: 'card' },
@@ -1233,10 +1217,6 @@
       viewEl.appendChild(h('div', { class: 'card' },
         h('h2', null, 'Today\'s totals'),
         meals.length === 0 ? h('p', { class: 'muted' }, 'No meals yet.') : null,
-        burned && targets ? h('p', { class: 'muted small' }, '🏃 Targets raised by ~' + burned + ' kcal for today\'s exercise.') : null,
-        sun ? h('p', { class: 'muted small' }, '☀️ Vitamin D includes ~' + fmt(sun, 'µg') + ' µg made by your skin in the sun.') : null,
-        totals.sugar_g > 0 ? h('p', { class: 'muted small' }, SUGAR_NOTE) : null,
-        totals.purine_mg > 0 ? h('p', { class: 'muted small' }, PURINE_NOTE) : null,
         nutrientBars(totals, targets)));
 
       if (isToday) {
@@ -2756,7 +2736,7 @@
     });
   }
 
-  var APP_VERSION = '1.45';
+  var APP_VERSION = '1.46';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {

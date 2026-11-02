@@ -424,11 +424,6 @@ label.field textarea {
   font-variant-numeric: tabular-nums;
 }
 
-.rose-legend {
-  text-align: center;
-  margin: 2px 0 0;
-}
-
 .nc-tip {
   position: absolute;
   right: 0;
