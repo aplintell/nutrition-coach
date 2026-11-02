@@ -1227,11 +1227,8 @@
             ? 'Enter your health profile (weight, height, age, lab results...) so the app knows how much of each nutrient you need.'
             : 'Your profile is saved. Now work out your daily nutrition targets.'),
           h('a', { class: 'btn primary', href: '#profile' }, !profile ? 'Enter health profile' : 'Work out daily targets')));
-      } else if (targetsStale(targets, profile, r[4])) {
-        viewEl.appendChild(h('div', { class: 'card' },
-          h('p', { class: 'muted' }, 'Your profile, lab results or the app\'s target rules (e.g. the new sugar and purine limits) have changed. Your daily targets should be worked out again.'),
-          h('a', { class: 'btn', href: '#profile' }, 'Recalculate targets')));
       }
+      // (Out-of-date targets are flagged on the Profile screen only.)
 
       viewEl.appendChild(h('div', { class: 'card' },
         h('h2', null, 'Today\'s totals'),
@@ -2759,7 +2756,7 @@
     });
   }
 
-  var APP_VERSION = '1.43';
+  var APP_VERSION = '1.44';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
