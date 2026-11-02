@@ -976,8 +976,110 @@
     return pieChart('Where the energy comes from', parts, fmt(sum, 'kcal'), 'kcal');
   }
 
+  // ---- Rose chart (vitamins, minerals) ----
+  //
+  // One slice per nutrient, all the same angle; a slice reaches out to that nutrient's % of its
+  // daily target. Area, not radius, grows with the value (radius ∝ √%), so a slice twice as long
+  // doesn't look four times as big. A faint track behind each slice reaches 100%, a hairline circle
+  // marks 100% for all, and slices stop at 150% (the label keeps the real %). Fills carry the status
+  // colour; the status in words is in the tooltip and each slice's accessible name.
+  var ROSE_MAX_PCT = 150;
+  var ROSE_R = 92;
+  var ROSE_C = 160;
+
+  function roseRadius(pct) {
+    return ROSE_R * Math.sqrt(Math.max(0, Math.min(pct, ROSE_MAX_PCT)) / ROSE_MAX_PCT);
+  }
+
+  function rosePoint(r, deg) {
+    var a = (deg - 90) * Math.PI / 180;
+    return [ROSE_C + r * Math.cos(a), ROSE_C + r * Math.sin(a)];
+  }
+
+  /** A wedge from radius r0 to r1 between two angles (degrees, 0 = 12 o'clock, clockwise). */
+  function wedgePath(r0, r1, a0, a1) {
+    var large = a1 - a0 > 180 ? 1 : 0;
+    var p1 = rosePoint(r1, a0);
+    var p2 = rosePoint(r1, a1);
+    var p3 = rosePoint(r0, a1);
+    var p4 = rosePoint(r0, a0);
+    var f = function (pt) {
+      return pt[0].toFixed(2) + ' ' + pt[1].toFixed(2);
+    };
+    return 'M ' + f(p1) + ' A ' + r1 + ' ' + r1 + ' 0 ' + large + ' 1 ' + f(p2)
+      + ' L ' + f(p3) + ' A ' + r0 + ' ' + r0 + ' 0 ' + large + ' 0 ' + f(p4) + ' Z';
+  }
+
+  function roseChart(title, keys, shortName, totals, ranges) {
+    var hasTarget = function (k) {
+      var r = ranges && ranges[k];
+      return !!(r && (r.min || r.max));
+    };
+    var withTarget = keys.filter(hasTarget);
+    var without = keys.filter(function (k) {
+      return !hasTarget(k);
+    });
+    var chart = h('section', { class: 'nchart', 'aria-label': title });
+    chart.appendChild(h('h3', null, title));
+    if (withTarget.length) {
+      var tooltip = chartTooltip(chart);
+      var box = h('div', { class: 'rose-box' });
+      var rose = svg('svg', { viewBox: '-30 20 380 280', class: 'rose', role: 'list', 'aria-label': title + ', each as a % of its daily target' });
+      var step = 360 / withTarget.length;
+      var pad = Math.min(2, step / 8);
+      var inner = 8;
+      withTarget.forEach(function (k, i) {
+        var f = chartFacts(k, totals[k] || 0, ranges[k]);
+        var a0 = i * step + pad;
+        var a1 = (i + 1) * step - pad;
+        rose.appendChild(svg('path', { class: 'rose-track', d: wedgePath(inner, roseRadius(100), a0, a1) }));
+        var slice = svg('path', {
+          class: 'rose-slice status-' + f.status,
+          d: wedgePath(inner, Math.max(inner + 1, roseRadius(f.pct)), a0, a1),
+          role: 'listitem', tabindex: '0',
+          'aria-label': f.n.name + ': ' + fmt(totals[k] || 0, f.n.unit) + ' ' + f.n.unit + ', ' + Math.round(f.pct) + '% of target (' + f.target + '). ' + f.words + '.'
+        });
+        var show = function () {
+          tooltip.show(box, [fmt(totals[k] || 0, f.n.unit) + ' ' + f.n.unit, f.n.name, Math.round(f.pct) + '% of daily target',
+            'Target: ' + f.target, STATUS_TEXT[f.status] + f.words]);
+        };
+        slice.addEventListener('pointerenter', show);
+        slice.addEventListener('focus', show);
+        slice.addEventListener('click', show);
+        slice.addEventListener('pointerleave', tooltip.hide);
+        slice.addEventListener('blur', tooltip.hide);
+        rose.appendChild(slice);
+        // Label outside the slice: short name, and the % under it.
+        var mid = (a0 + a1) / 2;
+        var pt = rosePoint(ROSE_R + 16, mid);
+        var anchor = mid > 20 && mid < 160 ? 'start' : mid > 200 && mid < 340 ? 'end' : 'middle';
+        var name = svg('text', { x: pt[0].toFixed(1), y: (pt[1] - 4).toFixed(1), class: 'rose-name', 'text-anchor': anchor });
+        name.textContent = shortName(f.n.name);
+        var pctLabel = svg('text', { x: pt[0].toFixed(1), y: (pt[1] + 10).toFixed(1), class: 'rose-pct', 'text-anchor': anchor });
+        pctLabel.textContent = Math.round(f.pct) + '%';
+        rose.appendChild(name);
+        rose.appendChild(pctLabel);
+      });
+      rose.appendChild(svg('circle', { class: 'rose-ref', cx: ROSE_C, cy: ROSE_C, r: roseRadius(100).toFixed(2), fill: 'none' }));
+      box.appendChild(rose);
+      chart.appendChild(box);
+      chart.appendChild(h('p', { class: 'muted small rose-legend' }, 'Circle = 100% of your daily target · tap a slice for details'));
+    }
+    if (without.length) {
+      chart.appendChild(h('div', { class: 'nc-free' },
+        h('div', { class: 'muted small' }, withTarget.length ? 'No daily target' : 'No daily targets yet — work them out in Profile to see these against your needs'),
+        h('table', { class: 'simple' }, h('tbody', null, without.map(function (k) {
+          return h('tr', null, h('td', null, NUTRIENT_BY_KEY[k].name), h('td', null, fmtAmount(k, totals[k] || 0)));
+        })))));
+    }
+    return chart;
+  }
+
   function nutrientBars(totals, targets) {
     var ranges = targets ? targets.targets : null;
+    function isVitamin(k) {
+      return /^vitamin_|^folate/.test(k);
+    }
     function keysOf(group) {
       return NUTRIENTS.filter(function (n) {
         return group === 'main' ? n.group === 'main' : n.group !== 'main';
@@ -988,7 +1090,14 @@
     return [
       energyPie(totals),
       nutrientChart('Main nutrients', keysOf('main'), totals, ranges),
-      nutrientChart('Vitamins & minerals', keysOf('micro'), totals, ranges)
+      roseChart('Vitamins', keysOf('micro').filter(isVitamin), function (name) {
+        return name.replace(/^Vitamin /, '').replace(/ \(B9\)$/, '');
+      }, totals, ranges),
+      roseChart('Minerals', keysOf('micro').filter(function (k) {
+        return !isVitamin(k);
+      }), function (name) {
+        return name;
+      }, totals, ranges)
     ];
   }
 
@@ -2783,7 +2892,7 @@
     });
   }
 
-  var APP_VERSION = '1.35';
+  var APP_VERSION = '1.36';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {

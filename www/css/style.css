@@ -452,6 +452,48 @@ label.field textarea {
   font-variant-numeric: tabular-nums;
 }
 
+/* Rose chart: one slice per nutrient, length = % of the daily target. */
+.rose-box {
+  position: relative;
+  max-width: 340px;
+  margin: 0 auto;
+}
+
+.rose {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.rose-track { fill: var(--surface-alt); }
+.rose-slice { outline: none; cursor: pointer; }
+.rose-slice.status-ok { fill: var(--ok); }
+.rose-slice.status-under { fill: var(--under); }
+.rose-slice.status-over { fill: var(--over); }
+.rose-slice:hover, .rose-slice:focus-visible { opacity: 0.8; }
+
+.rose-ref {
+  stroke: var(--text-dim);
+  stroke-width: 1;
+}
+
+.rose-name {
+  fill: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rose-pct {
+  fill: var(--text-dim);
+  font-size: 11px;
+}
+
+.rose-legend {
+  text-align: center;
+  margin: 2px 0 0;
+}
+
 /* Energy pie: where today's energy comes from. */
 .pie-wrap {
   display: flex;
