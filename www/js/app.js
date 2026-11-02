@@ -902,80 +902,6 @@
     return chart;
   }
 
-  /**
-   * A pie (drawn as a thick ring) of how one whole splits into parts, with a legend listing each
-   * part's share and a note. parts: [{ name, value, cls, note }]; slices keep a 2px surface gap.
-   */
-  function pieChart(title, parts, centreText, centreUnit) {
-    var sum = parts.reduce(function (t, p) {
-      return t + p.value;
-    }, 0);
-    if (!(sum > 0)) {
-      return null;
-    }
-    var share = function (p) {
-      return Math.round(p.value / sum * 100);
-    };
-    var pie = svg('svg', { viewBox: '0 0 120 120', class: 'pie', role: 'img',
-      'aria-label': title + ': ' + parts.map(function (p) {
-        return p.name + ' ' + share(p) + '%';
-      }).join(', ') });
-    var r = 42;
-    var c = 2 * Math.PI * r;
-    var gap = 2;
-    var start = 0;
-    parts.forEach(function (p) {
-      var len = p.value / sum * c;
-      if (len > gap) {
-        pie.appendChild(svg('circle', {
-          class: 'pie-slice ' + p.cls, cx: 60, cy: 60, r: r, fill: 'none',
-          'stroke-dasharray': (len - gap).toFixed(2) + ' ' + c.toFixed(2),
-          'stroke-dashoffset': (-start).toFixed(2),
-          transform: 'rotate(-90 60 60)'
-        }));
-      }
-      start += len;
-    });
-    var centre = svg('text', { x: 60, y: 57, class: 'pie-total', 'text-anchor': 'middle' });
-    centre.textContent = centreText;
-    var unit = svg('text', { x: 60, y: 72, class: 'pie-unit', 'text-anchor': 'middle' });
-    unit.textContent = centreUnit;
-    pie.appendChild(centre);
-    pie.appendChild(unit);
-    return h('section', { class: 'nchart pie-chart', 'aria-label': title },
-      h('h3', null, title),
-      h('div', { class: 'pie-wrap' },
-        pie,
-        h('div', { class: 'pie-legend', role: 'list' }, parts.filter(function (p) {
-          return p.value > 0 || !p.hideWhenZero;
-        }).map(function (p) {
-          return h('div', { class: 'pie-row', role: 'listitem' },
-            h('span', { class: 'swatch ' + p.cls, 'aria-hidden': 'true' }),
-            h('span', { class: 'pie-name' }, p.name, p.note ? h('div', { class: 'muted small' }, p.note) : null),
-            h('strong', { class: 'pie-pct' }, share(p) + '%'));
-        }))));
-  }
-
-  // Where the energy comes from (kcal per gram: carbs 4, protein 4, fat 9), with the ranges
-  // usually advised for adults.
-  var ENERGY_PARTS = [
-    { key: 'carbs_g', name: 'Carbohydrate', perGram: 4, range: '45–65%' },
-    { key: 'protein_g', name: 'Protein', perGram: 4, range: '10–35%' },
-    { key: 'fat_g', name: 'Fat', perGram: 9, range: '20–35%' }
-  ];
-  // Colours: the first three validated categorical slots, in fixed order.
-  var SLOT = ['s1', 's2', 's3'];
-
-  function energyPie(totals) {
-    var parts = ENERGY_PARTS.map(function (p, i) {
-      return { name: p.name, value: (totals[p.key] || 0) * p.perGram, cls: SLOT[i], note: 'advised ' + p.range };
-    });
-    var sum = parts.reduce(function (t, p) {
-      return t + p.value;
-    }, 0);
-    return pieChart('Where the energy comes from', parts, fmt(sum, 'kcal'), 'kcal');
-  }
-
   // ---- Rose chart (vitamins, minerals) ----
   //
   // One slice per nutrient, all the same angle; a slice reaches out to that nutrient's % of its
@@ -984,8 +910,14 @@
   // marks 100% for all, and slices stop at 150% (the label keeps the real %). Fills carry the status
   // colour; the status in words is in the tooltip and each slice's accessible name.
   var ROSE_MAX_PCT = 150;
-  // Protein, carbohydrate and fat share one rose chart instead of three rings.
+  // Protein, carbohydrate and fat share one rose chart instead of three rings. kcal per gram, and the
+  // share of energy usually advised for adults.
   var MACRO_KEYS = ['protein_g', 'carbs_g', 'fat_g'];
+  var MACRO_INFO = {
+    protein_g: { perGram: 4, advised: '10–35%' },
+    carbs_g: { perGram: 4, advised: '45–65%' },
+    fat_g: { perGram: 9, advised: '20–35%' }
+  };
   var ROSE_R = 92;
   var ROSE_C = 160;
 
@@ -1015,7 +947,8 @@
   /**
    * opts.weight(key): when given, each slice's angle is its share of the weights (e.g. the energy each
    * macronutrient supplies) instead of all slices being equal. opts.footer replaces the note under
-   * the chart.
+   * the chart; opts.inside(key) gives text to print inside the slice (only where it fits);
+   * opts.after is an element shown under the chart.
    */
   function roseChart(title, keys, shortName, totals, ranges, opts) {
     opts = opts || {};
@@ -1086,11 +1019,26 @@
         pctLabel.textContent = fmt(totals[k] || 0, f.n.unit) + ' / ' + fmt(f.ref, f.n.unit) + ' ' + f.n.unit;
         rose.appendChild(name);
         rose.appendChild(pctLabel);
+        if (opts.inside) {
+          // Inside the slice, at 60% of its length, if the slice is long and wide enough there.
+          var sliceR = Math.max(inner + 1, roseRadius(f.pct));
+          var textR = Math.max(inner + 12, sliceR * 0.6);
+          var arc = textR * (a1 - a0) * Math.PI / 180;
+          if (sliceR >= 34 && arc >= 34) {
+            var ip = rosePoint(textR, mid);
+            var inside = svg('text', { x: ip[0].toFixed(1), y: ip[1].toFixed(1), class: 'rose-inside', 'text-anchor': 'middle', 'dominant-baseline': 'central', 'aria-hidden': 'true' });
+            inside.textContent = opts.inside(k);
+            rose.appendChild(inside);
+          }
+        }
       });
       rose.appendChild(svg('circle', { class: 'rose-ref', cx: ROSE_C, cy: ROSE_C, r: roseRadius(100).toFixed(2), fill: 'none' }));
       box.appendChild(rose);
       chart.appendChild(box);
       chart.appendChild(h('p', { class: 'muted small rose-legend' }, opts.footer || 'Circle = 100% of your daily target · tap a slice for details'));
+      if (opts.after) {
+        chart.appendChild(opts.after);
+      }
     }
     if (without.length) {
       chart.appendChild(h('div', { class: 'nc-free' },
@@ -1121,19 +1069,33 @@
         return n.key;
       });
     }
+    // Slice angle = the share of energy each macronutrient supplies; length = % of its target.
+    var macroKcal = function (k) {
+      return (totals[k] || 0) * MACRO_INFO[k].perGram;
+    };
+    var macroSum = MACRO_KEYS.reduce(function (t, k) {
+      return t + macroKcal(k);
+    }, 0);
+    var energyShare = function (k) {
+      return macroSum > 0 ? Math.round(macroKcal(k) / macroSum * 100) + '%' : '–';
+    };
+    // Carbohydrate first, as the biggest share in most diets.
+    var advisedTable = h('table', { class: 'simple macro-table' },
+      h('thead', null, h('tr', null, h('th', null, 'Share of energy'), h('th', null, 'Today'), h('th', null, 'Advised'))),
+      h('tbody', null, ['carbs_g', 'protein_g', 'fat_g'].map(function (k) {
+        return h('tr', null, h('td', null, NUTRIENT_BY_KEY[k].name), h('td', null, energyShare(k)), h('td', null, MACRO_INFO[k].advised));
+      })));
     return [
-      energyPie(totals),
-      // Slice angle = the share of energy each macronutrient supplies; length = % of its target.
       roseChart('Macronutrients', MACRO_KEYS, function (name) {
         return name;
       }, totals, ranges, {
-        weight: function (k) {
-          return (totals[k] || 0) * ({ protein_g: 4, carbs_g: 4, fat_g: 9 })[k];
-        },
-        footer: energyLine(totals, ranges)
+        weight: macroKcal,
+        inside: energyShare,
+        footer: energyLine(totals, ranges),
+        after: macroSum > 0 ? advisedTable : null
       }),
       nutrientChart('Main nutrients', keysOf('main').filter(function (k) {
-        return MACRO_KEYS.indexOf(k) === -1;
+        return MACRO_KEYS.indexOf(k) === -1 && k !== 'energy_kcal';
       }), totals, ranges),
       roseChart('Vitamins', keysOf('micro').filter(isVitamin), function (name) {
         return name.replace(/^Vitamin /, '').replace(/ \(B9\)$/, '');
@@ -2937,7 +2899,7 @@
     });
   }
 
-  var APP_VERSION = '1.39';
+  var APP_VERSION = '1.40';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {

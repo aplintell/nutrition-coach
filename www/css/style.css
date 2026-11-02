@@ -489,6 +489,36 @@ label.field textarea {
   font-size: 12px;
 }
 
+.rose-inside {
+  fill: #06140c;
+  font-size: 14px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+/* Macronutrients: share of energy today vs the advised range. */
+.macro-table {
+  margin-top: 8px;
+}
+
+.macro-table th {
+  padding: 4px 2px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-align: right;
+}
+
+.macro-table th:first-child {
+  text-align: left;
+}
+
+.macro-table td:nth-child(2) {
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .rose-legend {
   text-align: center;
   margin: 2px 0 0;
