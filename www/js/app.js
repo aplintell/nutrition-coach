@@ -693,27 +693,129 @@
     };
   }
 
+  // Sugar has one combined tile: the outer ring stands for total sugar, and the disc inside is
+  // split into vertical stripes by source (WHO split). The ring's colour says whether the sugars
+  // that have limits are within them; total sugar itself has no target.
+  var SUGAR_SOURCES = [
+    { key: 'free_sugar_g', name: 'Added, honey, juice', cls: 's1' },
+    { key: 'fruit_sugar_g', name: 'Whole fruit & veg', cls: 's2' },
+    { key: 'milk_sugar_g', name: 'Milk', cls: 's3' }
+  ];
+  var SUGAR_KEYS = ['sugar_g', 'free_sugar_g', 'fruit_sugar_g', 'milk_sugar_g'];
+
+  function sugarTile(totals, ranges, tooltip) {
+    var parts = SUGAR_SOURCES.map(function (src) {
+      var range = ranges && ranges[src.key];
+      return Object.assign({ value: totals[src.key] || 0, max: range && range.max !== null && range.max !== undefined ? range.max : null }, src);
+    });
+    var partsSum = parts.reduce(function (t, x) {
+      return t + x.value;
+    }, 0);
+    var total = Math.max(totals.sugar_g || 0, partsSum);
+    // Meals saved before the split only have a total: that part shows as a grey stripe.
+    if (total - partsSum >= 0.5) {
+      parts.push({ key: null, name: 'Not sorted (older meals)', cls: 'unsorted', value: total - partsSum, max: null });
+    }
+    var limited = parts.filter(function (x) {
+      return x.max !== null;
+    });
+    var over = limited.filter(function (x) {
+      return x.value > x.max;
+    });
+    var status = !limited.length ? 'none' : over.length ? 'over' : 'ok';
+
+    var ring = svg('svg', { viewBox: '0 0 100 100', class: 'sugar-ring', 'aria-hidden': 'true' });
+    var clipId = 'sugar-clip-' + Math.random().toString(36).slice(2, 8);
+    var defs = svg('defs');
+    var clip = svg('clipPath', { id: clipId });
+    clip.appendChild(svg('circle', { cx: 50, cy: 50, r: 36 }));
+    defs.appendChild(clip);
+    ring.appendChild(defs);
+    ring.appendChild(svg('circle', { class: 'sugar-outer', cx: 50, cy: 50, r: 44, fill: 'none' }));
+    var stripes = svg('g', { 'clip-path': 'url(#' + clipId + ')' });
+    stripes.appendChild(svg('rect', { class: 'sugar-empty', x: 14, y: 14, width: 72, height: 72 }));
+    var x = 14;
+    var gap = 2;
+    parts.forEach(function (part) {
+      var w = total > 0 ? part.value / total * 72 : 0;
+      if (w > gap) {
+        stripes.appendChild(svg('rect', { class: 'stripe ' + part.cls, x: x.toFixed(2), y: 14, width: (w - gap).toFixed(2), height: 72 }));
+      }
+      x += w;
+    });
+    ring.appendChild(stripes);
+
+    var share = function (part) {
+      return total > 0 ? Math.round(part.value / total * 100) : 0;
+    };
+    var amountText = function (part) {
+      return fmt(part.value, 'g') + (part.max !== null ? ' / ' + fmt(part.max, 'g') : '') + ' g';
+    };
+    var label = 'Total sugar ' + fmt(total, 'g') + ' g: ' + parts.map(function (part) {
+      return part.name + ' ' + amountText(part) + ' (' + share(part) + '%)';
+    }).join(', ') + (status === 'over' ? '. Over the limit for ' + over.map(function (o) {
+      return o.name.toLowerCase();
+    }).join(' and ') : status === 'ok' ? '. Within the limits' : '') + '.';
+    var tile = h('div', { class: 'ring-tile sugar-tile status-' + status, role: 'listitem', tabindex: '0', 'aria-label': label },
+      h('div', { class: 'sugar-ring-box' }, ring),
+      h('div', { class: 'sugar-info' },
+        h('div', { class: 'sugar-title' }, 'Sugar', h('span', { class: 'sugar-total' }, fmt(total, 'g') + ' g total')),
+        parts.map(function (part) {
+          return h('div', { class: 'sugar-row' },
+            h('span', { class: 'swatch ' + part.cls, 'aria-hidden': 'true' }),
+            h('span', { class: 'sugar-name' }, part.name),
+            h('span', { class: 'sugar-amount' }, amountText(part)),
+            h('strong', { class: 'sugar-pct' }, share(part) + '%'));
+        })));
+    function show() {
+      tooltip.show(tile, [fmt(total, 'g') + ' g', 'Total sugar'].concat(parts.map(function (part) {
+        return part.name + ': ' + amountText(part) + ' (' + share(part) + '%)';
+      }), status === 'over' ? ['⬆️ Over the limit for ' + over.map(function (o) {
+        return o.name.toLowerCase();
+      }).join(' and ')] : status === 'ok' ? ['✅ Within the limits'] : []));
+    }
+    tile.addEventListener('pointerenter', show);
+    tile.addEventListener('focus', show);
+    tile.addEventListener('click', show);
+    tile.addEventListener('pointerleave', tooltip.hide);
+    tile.addEventListener('blur', tooltip.hide);
+    return tile;
+  }
+
   /**
-   * A chart section: a ring for each nutrient that has a daily target, and a plain list of the ones
-   * that don't (no target means nothing to measure a ring against).
+   * A chart section: a ring for each nutrient that has a daily target (sugar as one combined tile),
+   * and a plain list of the ones that don't (no target means nothing to measure a ring against).
    */
   function nutrientChart(title, keys, totals, ranges) {
-    var withTarget = keys.filter(function (k) {
+    var hasTarget = function (k) {
       var r = ranges && ranges[k];
-      return r && (r.min || r.max);
+      return !!(r && (r.min || r.max));
+    };
+    var showSugar = keys.indexOf('sugar_g') !== -1 && SUGAR_KEYS.some(function (k) {
+      return (totals[k] || 0) > 0 || hasTarget(k);
+    });
+    var withTarget = keys.filter(function (k) {
+      return SUGAR_KEYS.indexOf(k) === -1 && hasTarget(k);
     });
     var without = keys.filter(function (k) {
-      return withTarget.indexOf(k) === -1;
+      return SUGAR_KEYS.indexOf(k) === -1 && !hasTarget(k);
     });
     var chart = h('section', { class: 'nchart', 'aria-label': title });
     chart.appendChild(h('h3', null, title));
-    if (withTarget.length) {
-      chart.appendChild(h('p', { class: 'muted small nc-legend' }, 'Full ring = 100% of your daily target · a second lap means over 100%'));
+    if (withTarget.length || showSugar) {
+      if (withTarget.length) {
+        chart.appendChild(h('p', { class: 'muted small nc-legend' }, 'Full ring = 100% of your daily target · a second lap means over 100%'));
+      }
       var grid = h('div', { class: 'ring-grid', role: 'list' });
       chart.appendChild(grid);
       var tooltip = chartTooltip(chart);
-      withTarget.forEach(function (k) {
-        grid.appendChild(ringTile(k, totals[k] || 0, ranges[k], tooltip));
+      // Keep the nutrient order: the sugar tile sits where the sugars are in the list.
+      keys.forEach(function (k) {
+        if (k === 'sugar_g' && showSugar) {
+          grid.appendChild(sugarTile(totals, ranges, tooltip));
+        } else if (withTarget.indexOf(k) !== -1) {
+          grid.appendChild(ringTile(k, totals[k] || 0, ranges[k], tooltip));
+        }
       });
     }
     if (without.length) {
@@ -2607,7 +2709,7 @@
     });
   }
 
-  var APP_VERSION = '1.30';
+  var APP_VERSION = '1.31';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
