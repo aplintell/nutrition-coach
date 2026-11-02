@@ -699,9 +699,9 @@
   // by source (WHO split), showing how total sugar is made up. Targets worked out before the split
   // (v1.24) have no added-sugar limit; then the WHO limit, 10% of the energy target, stands in.
   var SUGAR_SOURCES = [
-    { key: 'free_sugar_g', name: 'Added, honey, juice', cls: 's1' },
+    { key: 'free_sugar_g', name: 'Added, honey, juice', cls: 's3' },
     { key: 'fruit_sugar_g', name: 'Whole fruit & veg', cls: 's2' },
-    { key: 'milk_sugar_g', name: 'Milk', cls: 's3' }
+    { key: 'milk_sugar_g', name: 'Milk', cls: 's1' }
   ];
   var SUGAR_KEYS = ['sugar_g', 'free_sugar_g', 'fruit_sugar_g', 'milk_sugar_g'];
 
@@ -2742,7 +2742,7 @@
     });
   }
 
-  var APP_VERSION = '1.32';
+  var APP_VERSION = '1.33';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
