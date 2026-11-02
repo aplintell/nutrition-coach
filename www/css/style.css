@@ -480,13 +480,13 @@ label.field textarea {
 
 .rose-name {
   fill: var(--text);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 
 .rose-pct {
   fill: var(--text-dim);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .rose-legend {

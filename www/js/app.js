@@ -1024,7 +1024,7 @@
     if (withTarget.length) {
       var tooltip = chartTooltip(chart);
       var box = h('div', { class: 'rose-box' });
-      var rose = svg('svg', { viewBox: '-30 20 380 280', class: 'rose', role: 'list', 'aria-label': title + ', each as a % of its daily target' });
+      var rose = svg('svg', { viewBox: '-62 20 444 280', class: 'rose', role: 'list', 'aria-label': title + ', each as a % of its daily target' });
       var step = 360 / withTarget.length;
       var pad = Math.min(2, step / 8);
       var inner = 8;
@@ -1052,11 +1052,13 @@
         // Label outside the slice: short name, and the % under it.
         var mid = (a0 + a1) / 2;
         var pt = rosePoint(ROSE_R + 16, mid);
-        var anchor = mid > 20 && mid < 160 ? 'start' : mid > 200 && mid < 340 ? 'end' : 'middle';
+        // Right half reads outward to the right, left half to the left; only straight up/down is centred.
+        var anchor = mid > 4 && mid < 176 ? 'start' : mid > 184 && mid < 356 ? 'end' : 'middle';
         var name = svg('text', { x: pt[0].toFixed(1), y: (pt[1] - 4).toFixed(1), class: 'rose-name', 'text-anchor': anchor });
         name.textContent = shortName(f.n.name);
         var pctLabel = svg('text', { x: pt[0].toFixed(1), y: (pt[1] + 10).toFixed(1), class: 'rose-pct', 'text-anchor': anchor });
-        pctLabel.textContent = Math.round(f.pct) + '%';
+        // Amount / target, like the rings (the % is in the tooltip).
+        pctLabel.textContent = fmt(totals[k] || 0, f.n.unit) + ' / ' + fmt(f.ref, f.n.unit) + ' ' + f.n.unit;
         rose.appendChild(name);
         rose.appendChild(pctLabel);
       });
@@ -2892,7 +2894,7 @@
     });
   }
 
-  var APP_VERSION = '1.36';
+  var APP_VERSION = '1.37';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
