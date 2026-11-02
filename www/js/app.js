@@ -598,8 +598,8 @@
   // One ring gauge per nutrient: a full ring is 100% of that nutrient's own daily target, so energy,
   // grams and µg read the same way. Past 100%, a second lap is drawn over the first, and the % and
   // the amounts are printed, so the state reads without the fill colour; the status in words is in
-  // the tooltip and the tile's accessible name. Above them, pies show the real part-to-wholes:
-  // where the energy comes from, and sugars and purines by source.
+  // the tooltip and the tile's accessible name. Above them, a pie shows the one real
+  // part-to-whole: where the energy comes from.
   var STATUS_TEXT = { ok: '✅ ', under: '⬇️ ', over: '⬆️ ' };
   var SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -787,8 +787,7 @@
     { key: 'protein_g', name: 'Protein', perGram: 4, range: '10–35%' },
     { key: 'fat_g', name: 'Fat', perGram: 9, range: '20–35%' }
   ];
-  // Colours: the first three validated categorical slots, in fixed order within each pie;
-  // 'Not sorted' is neutral grey.
+  // Colours: the first three validated categorical slots, in fixed order.
   var SLOT = ['s1', 's2', 's3'];
 
   function energyPie(totals) {
@@ -799,38 +798,6 @@
       return t + p.value;
     }, 0);
     return pieChart('Where the energy comes from', parts, fmt(sum, 'kcal'), 'kcal');
-  }
-
-  // Sugars and purines by source: the total is split into its parts. Meals saved before the split
-  // only have a total, so whatever the parts don't cover shows as a grey "Not sorted" slice.
-  var SOURCE_PIES = [
-    { title: 'Sugars by source', total: 'sugar_g', parts: ['free_sugar_g', 'fruit_sugar_g', 'milk_sugar_g'] },
-    { title: 'Purines by source', total: 'purine_mg', parts: ['purine_animal_mg', 'purine_plant_mg'] }
-  ];
-  var SOURCE_KEYS = SOURCE_PIES.reduce(function (keys, pie) {
-    return keys.concat([pie.total], pie.parts);
-  }, []);
-
-  function sourcePie(def, totals, ranges) {
-    var unitOf = NUTRIENT_BY_KEY[def.total].unit;
-    var parts = def.parts.map(function (key, i) {
-      var n = NUTRIENT_BY_KEY[key];
-      var value = totals[key] || 0;
-      var range = ranges && ranges[key];
-      var limit = range && range.max !== null && range.max !== undefined ? ' · max ' + fmt(range.max, n.unit) + ' ' + n.unit : '';
-      // The legend names the source only ("added, honey, juice"); the pie's title says what it is.
-      var name = n.name.replace(/^(Sugars|Purines) – /, '');
-      return { name: name.charAt(0).toUpperCase() + name.slice(1), value: value, cls: SLOT[i], note: fmt(value, n.unit) + ' ' + n.unit + limit };
-    });
-    var partsSum = parts.reduce(function (t, p) {
-      return t + p.value;
-    }, 0);
-    var total = Math.max(totals[def.total] || 0, partsSum);
-    if (total - partsSum >= (unitOf === 'g' ? 0.5 : 5)) {
-      parts.push({ name: 'Not sorted', value: total - partsSum, cls: 'unsorted',
-        note: fmt(total - partsSum, unitOf) + ' ' + unitOf + ' from meals saved before the split' });
-    }
-    return pieChart(def.title, parts, fmt(total, unitOf), unitOf);
   }
 
   function nutrientBars(totals, targets) {
@@ -844,12 +811,7 @@
     }
     return [
       energyPie(totals),
-      SOURCE_PIES.map(function (def) {
-        return sourcePie(def, totals, ranges);
-      }),
-      nutrientChart('Main nutrients', keysOf('main').filter(function (k) {
-        return SOURCE_KEYS.indexOf(k) === -1;
-      }), totals, ranges),
+      nutrientChart('Main nutrients', keysOf('main'), totals, ranges),
       nutrientChart('Vitamins & minerals', keysOf('micro'), totals, ranges)
     ];
   }
@@ -2645,7 +2607,7 @@
     });
   }
 
-  var APP_VERSION = '1.29';
+  var APP_VERSION = '1.30';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
