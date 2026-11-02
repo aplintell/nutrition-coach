@@ -370,13 +370,27 @@ label.field textarea {
   height: 100%;
 }
 
-.sugar-outer {
+.sugar-track,
+.sugar-fill {
   stroke-width: 9;
-  stroke: #6b7873;
 }
 
-.status-ok .sugar-outer { stroke: var(--ok); }
-.status-over .sugar-outer { stroke: var(--over); }
+.sugar-track { stroke: var(--surface-alt); }
+.sugar-fill { stroke-linecap: round; }
+.status-ok .sugar-fill { stroke: var(--ok); }
+.status-over .sugar-fill { stroke: var(--over); }
+.sugar-fill.lapped { opacity: 0.45; }
+
+.sugar-gauge {
+  font-size: 0.76rem;
+  font-weight: 600;
+  margin: -2px 0 4px;
+}
+
+.sugar-note {
+  margin-top: 4px;
+  font-size: 0.7rem;
+}
 
 .sugar-empty { fill: var(--surface-alt); }
 .stripe.s1 { fill: #3987e5; }
