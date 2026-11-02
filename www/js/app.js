@@ -984,6 +984,8 @@
   // marks 100% for all, and slices stop at 150% (the label keeps the real %). Fills carry the status
   // colour; the status in words is in the tooltip and each slice's accessible name.
   var ROSE_MAX_PCT = 150;
+  // Protein, carbohydrate and fat share one rose chart instead of three rings.
+  var MACRO_KEYS = ['protein_g', 'carbs_g', 'fat_g'];
   var ROSE_R = 92;
   var ROSE_C = 160;
 
@@ -1091,7 +1093,12 @@
     }
     return [
       energyPie(totals),
-      nutrientChart('Main nutrients', keysOf('main'), totals, ranges),
+      roseChart('Macronutrients', MACRO_KEYS, function (name) {
+        return name;
+      }, totals, ranges),
+      nutrientChart('Main nutrients', keysOf('main').filter(function (k) {
+        return MACRO_KEYS.indexOf(k) === -1;
+      }), totals, ranges),
       roseChart('Vitamins', keysOf('micro').filter(isVitamin), function (name) {
         return name.replace(/^Vitamin /, '').replace(/ \(B9\)$/, '');
       }, totals, ranges),
@@ -2894,7 +2901,7 @@
     });
   }
 
-  var APP_VERSION = '1.37';
+  var APP_VERSION = '1.38';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
