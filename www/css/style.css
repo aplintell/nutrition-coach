@@ -261,8 +261,17 @@ label.field textarea {
 /* Rose chart: one slice per nutrient, length = % of the daily target. */
 .rose-box {
   position: relative;
-  max-width: 374px;
+  max-width: 411px;
   margin: 0 auto;
+}
+
+/* On a phone the roses reach into the card's side padding, for a little more size. */
+@media (max-width: 480px) {
+  .nchart > .rose-box,
+  .nchart > .rose-row {
+    margin-left: -10px;
+    margin-right: -10px;
+  }
 }
 
 .rose {
@@ -299,18 +308,18 @@ label.field textarea {
 
 .rose-name {
   fill: var(--text);
-  font-size: 15px;
+  font-size: 16.5px;
   font-weight: 600;
 }
 
 .rose-pct {
   fill: var(--text-dim);
-  font-size: 13.8px;
+  font-size: 15.2px;
 }
 
 .rose-inside {
   fill: #06140c;
-  font-size: 16px;
+  font-size: 17.6px;
   font-weight: 700;
   pointer-events: none;
 }
