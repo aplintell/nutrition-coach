@@ -369,6 +369,7 @@ label.field textarea {
 .pie-slice.s1, .swatch.s1 { stroke: #3987e5; background: #3987e5; }
 .pie-slice.s2, .swatch.s2 { stroke: #d95926; background: #d95926; }
 .pie-slice.s3, .swatch.s3 { stroke: #199e70; background: #199e70; }
+.pie-slice.unsorted, .swatch.unsorted { stroke: #6b7873; background: #6b7873; }
 
 .pie-total {
   fill: var(--text);

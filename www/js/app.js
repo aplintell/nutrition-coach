@@ -596,9 +596,10 @@
   // ---- Nutrient charts (Today, past days) ----
   //
   // One ring gauge per nutrient: a full ring is 100% of that nutrient's own daily target, so energy,
-  // grams and µg read the same way. Past 100%, a second lap is drawn over the first. The fill is
-  // coloured by status, and status never rides on colour alone: every tile also says it in words
-  // with an icon. Above them, a pie shows the one real part-to-whole: where the energy comes from.
+  // grams and µg read the same way. Past 100%, a second lap is drawn over the first, and the % and
+  // the amounts are printed, so the state reads without the fill colour; the status in words is in
+  // the tooltip and the tile's accessible name. Above them, pies show the real part-to-wholes:
+  // where the energy comes from, and sugars and purines by source.
   var STATUS_TEXT = { ok: '✅ ', under: '⬇️ ', over: '⬆️ ' };
   var SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -659,11 +660,7 @@
     var tile = h('div', { class: 'ring-tile status-' + f.status, role: 'listitem', tabindex: '0', 'aria-label': label },
       h('div', { class: 'ring-box' }, ring, h('span', { class: 'ring-pct' }, Math.round(f.pct) + '%')),
       h('div', { class: 'ring-name' }, f.n.name),
-      h('div', { class: 'ring-value' }, fmt(value, f.n.unit) + ' / ' + fmt(f.ref, f.n.unit) + ' ' + f.n.unit),
-      // In a narrow tile the amount gets its own line, so a chip never breaks in the middle of it.
-      h('span', { class: 'chip ' + f.status }, f.amount
-        ? [STATUS_TEXT[f.status] + f.words.slice(0, -f.amount.length).trim(), h('span', { class: 'chip-amount' }, f.amount)]
-        : STATUS_TEXT[f.status] + f.words));
+      h('div', { class: 'ring-value' }, fmt(value, f.n.unit) + ' / ' + fmt(f.ref, f.n.unit) + ' ' + f.n.unit));
     function show() {
       tooltip.show(tile, [fmt(value, f.n.unit) + ' ' + f.n.unit, f.n.name, Math.round(f.pct) + '% of daily target',
         'Target: ' + f.target, STATUS_TEXT[f.status] + f.words]);
@@ -729,36 +726,31 @@
     return chart;
   }
 
-  // Where the energy comes from (kcal per gram: carbs 4, protein 4, fat 9), with the ranges
-  // usually advised for adults. Colours are the first three validated categorical slots.
-  var ENERGY_PARTS = [
-    { key: 'carbs_g', name: 'Carbohydrate', perGram: 4, range: '45–65%', cls: 's1' },
-    { key: 'protein_g', name: 'Protein', perGram: 4, range: '10–35%', cls: 's2' },
-    { key: 'fat_g', name: 'Fat', perGram: 9, range: '20–35%', cls: 's3' }
-  ];
-
-  function energyPie(totals) {
-    var parts = ENERGY_PARTS.map(function (p) {
-      return Object.assign({ kcal: (totals[p.key] || 0) * p.perGram }, p);
-    });
+  /**
+   * A pie (drawn as a thick ring) of how one whole splits into parts, with a legend listing each
+   * part's share and a note. parts: [{ name, value, cls, note }]; slices keep a 2px surface gap.
+   */
+  function pieChart(title, parts, centreText, centreUnit) {
     var sum = parts.reduce(function (t, p) {
-      return t + p.kcal;
+      return t + p.value;
     }, 0);
-    if (!sum) {
+    if (!(sum > 0)) {
       return null;
     }
+    var share = function (p) {
+      return Math.round(p.value / sum * 100);
+    };
     var pie = svg('svg', { viewBox: '0 0 120 120', class: 'pie', role: 'img',
-      'aria-label': 'Energy from ' + parts.map(function (p) {
-        return p.name.toLowerCase() + ' ' + Math.round(p.kcal / sum * 100) + '%';
+      'aria-label': title + ': ' + parts.map(function (p) {
+        return p.name + ' ' + share(p) + '%';
       }).join(', ') });
     var r = 42;
     var c = 2 * Math.PI * r;
     var gap = 2;
     var start = 0;
     parts.forEach(function (p) {
-      var len = p.kcal / sum * c;
+      var len = p.value / sum * c;
       if (len > gap) {
-        // Each slice is an arc of a thick ring; a 2px surface gap separates neighbours.
         pie.appendChild(svg('circle', {
           class: 'pie-slice ' + p.cls, cx: 60, cy: 60, r: r, fill: 'none',
           'stroke-dasharray': (len - gap).toFixed(2) + ' ' + c.toFixed(2),
@@ -769,21 +761,76 @@
       start += len;
     });
     var centre = svg('text', { x: 60, y: 57, class: 'pie-total', 'text-anchor': 'middle' });
-    centre.textContent = fmt(sum, 'kcal');
+    centre.textContent = centreText;
     var unit = svg('text', { x: 60, y: 72, class: 'pie-unit', 'text-anchor': 'middle' });
-    unit.textContent = 'kcal';
+    unit.textContent = centreUnit;
     pie.appendChild(centre);
     pie.appendChild(unit);
-    return h('section', { class: 'nchart energy-pie', 'aria-label': 'Where today\'s energy comes from' },
-      h('h3', null, 'Where the energy comes from'),
+    return h('section', { class: 'nchart pie-chart', 'aria-label': title },
+      h('h3', null, title),
       h('div', { class: 'pie-wrap' },
         pie,
-        h('div', { class: 'pie-legend', role: 'list' }, parts.map(function (p) {
+        h('div', { class: 'pie-legend', role: 'list' }, parts.filter(function (p) {
+          return p.value > 0 || !p.hideWhenZero;
+        }).map(function (p) {
           return h('div', { class: 'pie-row', role: 'listitem' },
             h('span', { class: 'swatch ' + p.cls, 'aria-hidden': 'true' }),
-            h('span', { class: 'pie-name' }, p.name, h('div', { class: 'muted small' }, 'advised ' + p.range)),
-            h('strong', { class: 'pie-pct' }, Math.round(p.kcal / sum * 100) + '%'));
+            h('span', { class: 'pie-name' }, p.name, p.note ? h('div', { class: 'muted small' }, p.note) : null),
+            h('strong', { class: 'pie-pct' }, share(p) + '%'));
         }))));
+  }
+
+  // Where the energy comes from (kcal per gram: carbs 4, protein 4, fat 9), with the ranges
+  // usually advised for adults.
+  var ENERGY_PARTS = [
+    { key: 'carbs_g', name: 'Carbohydrate', perGram: 4, range: '45–65%' },
+    { key: 'protein_g', name: 'Protein', perGram: 4, range: '10–35%' },
+    { key: 'fat_g', name: 'Fat', perGram: 9, range: '20–35%' }
+  ];
+  // Colours: the first three validated categorical slots, in fixed order within each pie;
+  // 'Not sorted' is neutral grey.
+  var SLOT = ['s1', 's2', 's3'];
+
+  function energyPie(totals) {
+    var parts = ENERGY_PARTS.map(function (p, i) {
+      return { name: p.name, value: (totals[p.key] || 0) * p.perGram, cls: SLOT[i], note: 'advised ' + p.range };
+    });
+    var sum = parts.reduce(function (t, p) {
+      return t + p.value;
+    }, 0);
+    return pieChart('Where the energy comes from', parts, fmt(sum, 'kcal'), 'kcal');
+  }
+
+  // Sugars and purines by source: the total is split into its parts. Meals saved before the split
+  // only have a total, so whatever the parts don't cover shows as a grey "Not sorted" slice.
+  var SOURCE_PIES = [
+    { title: 'Sugars by source', total: 'sugar_g', parts: ['free_sugar_g', 'fruit_sugar_g', 'milk_sugar_g'] },
+    { title: 'Purines by source', total: 'purine_mg', parts: ['purine_animal_mg', 'purine_plant_mg'] }
+  ];
+  var SOURCE_KEYS = SOURCE_PIES.reduce(function (keys, pie) {
+    return keys.concat([pie.total], pie.parts);
+  }, []);
+
+  function sourcePie(def, totals, ranges) {
+    var unitOf = NUTRIENT_BY_KEY[def.total].unit;
+    var parts = def.parts.map(function (key, i) {
+      var n = NUTRIENT_BY_KEY[key];
+      var value = totals[key] || 0;
+      var range = ranges && ranges[key];
+      var limit = range && range.max !== null && range.max !== undefined ? ' · max ' + fmt(range.max, n.unit) + ' ' + n.unit : '';
+      // The legend names the source only ("added, honey, juice"); the pie's title says what it is.
+      var name = n.name.replace(/^(Sugars|Purines) – /, '');
+      return { name: name.charAt(0).toUpperCase() + name.slice(1), value: value, cls: SLOT[i], note: fmt(value, n.unit) + ' ' + n.unit + limit };
+    });
+    var partsSum = parts.reduce(function (t, p) {
+      return t + p.value;
+    }, 0);
+    var total = Math.max(totals[def.total] || 0, partsSum);
+    if (total - partsSum >= (unitOf === 'g' ? 0.5 : 5)) {
+      parts.push({ name: 'Not sorted', value: total - partsSum, cls: 'unsorted',
+        note: fmt(total - partsSum, unitOf) + ' ' + unitOf + ' from meals saved before the split' });
+    }
+    return pieChart(def.title, parts, fmt(total, unitOf), unitOf);
   }
 
   function nutrientBars(totals, targets) {
@@ -797,7 +844,12 @@
     }
     return [
       energyPie(totals),
-      nutrientChart('Main nutrients', keysOf('main'), totals, ranges),
+      SOURCE_PIES.map(function (def) {
+        return sourcePie(def, totals, ranges);
+      }),
+      nutrientChart('Main nutrients', keysOf('main').filter(function (k) {
+        return SOURCE_KEYS.indexOf(k) === -1;
+      }), totals, ranges),
       nutrientChart('Vitamins & minerals', keysOf('micro'), totals, ranges)
     ];
   }
@@ -2593,7 +2645,7 @@
     });
   }
 
-  var APP_VERSION = '1.28';
+  var APP_VERSION = '1.29';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
