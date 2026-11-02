@@ -948,7 +948,8 @@
    * opts.weight(key): when given, each slice's angle is its share of the weights (e.g. the energy each
    * macronutrient supplies) instead of all slices being equal. opts.footer replaces the note under
    * the chart; opts.inside(key) gives text to print inside the slice (only where it fits);
-   * opts.after is an element shown under the chart.
+   * opts.after is an element shown under the chart, opts.side one beside it; footer: false hides
+   * the note.
    */
   function roseChart(title, keys, shortName, totals, ranges, opts) {
     opts = opts || {};
@@ -965,7 +966,7 @@
     if (withTarget.length) {
       var tooltip = chartTooltip(chart);
       var box = h('div', { class: 'rose-box' });
-      var rose = svg('svg', { viewBox: '-62 20 444 280', class: 'rose', role: 'list', 'aria-label': title + ', each as a % of its daily target' });
+      var rose = svg('svg', { viewBox: opts.viewBox || '-62 20 444 280', class: 'rose', role: 'list', 'aria-label': title + ', each as a % of its daily target' });
       var weights = withTarget.map(function (k) {
         return opts.weight ? Math.max(0, opts.weight(k)) : 1;
       });
@@ -1034,8 +1035,10 @@
       });
       rose.appendChild(svg('circle', { class: 'rose-ref', cx: ROSE_C, cy: ROSE_C, r: roseRadius(100).toFixed(2), fill: 'none' }));
       box.appendChild(rose);
-      chart.appendChild(box);
-      chart.appendChild(h('p', { class: 'muted small rose-legend' }, opts.footer || 'Circle = 100% of your daily target · tap a slice for details'));
+      chart.appendChild(opts.side ? h('div', { class: 'rose-row' }, box, opts.side) : box);
+      if (opts.footer !== false) {
+        chart.appendChild(h('p', { class: 'muted small rose-legend' }, opts.footer || 'Circle = 100% of your daily target · tap a slice for details'));
+      }
       if (opts.after) {
         chart.appendChild(opts.after);
       }
@@ -1050,11 +1053,42 @@
     return chart;
   }
 
-  /** "Energy 1,620 / 1,900 kcal" (or just the amount when there is no energy target). */
-  function energyLine(totals, ranges) {
-    var e = ranges && ranges.energy_kcal;
-    var ref = e && (e.min || e.max);
-    return 'Energy ' + fmt(totals.energy_kcal || 0, 'kcal') + (ref ? ' / ' + fmt(ref, 'kcal') : '') + ' kcal';
+  // Energy as one vertical bar: it fills from the bottom to the % of the energy target on a 0–150%
+  // scale, with the target zone as a lighter band and a hairline at 100%, coloured by status.
+  var COLUMN_MAX_PCT = 150;
+
+  function energyColumn(totals, ranges) {
+    var value = totals.energy_kcal || 0;
+    var range = ranges && ranges.energy_kcal;
+    var hasTarget = !!(range && (range.min || range.max));
+    var f = hasTarget ? chartFacts('energy_kcal', value, range) : null;
+    var toHeight = function (pct) {
+      return Math.max(0, Math.min(pct, COLUMN_MAX_PCT)) / COLUMN_MAX_PCT * 100 + '%';
+    };
+    var track = h('div', { class: 'ecol-track' });
+    if (f) {
+      var zoneFrom = range.min !== null ? 100 : 0;
+      var zoneTo = range.max !== null ? range.max / f.ref * 100 : COLUMN_MAX_PCT;
+      var zone = h('span', { class: 'ecol-zone' });
+      zone.style.bottom = toHeight(zoneFrom);
+      zone.style.height = 'calc(' + toHeight(zoneTo) + ' - ' + toHeight(zoneFrom) + ')';
+      track.appendChild(zone);
+      var fill = h('span', { class: 'ecol-fill' });
+      fill.style.height = toHeight(f.pct);
+      track.appendChild(fill);
+      var ref = h('span', { class: 'ecol-ref' });
+      ref.style.bottom = toHeight(100);
+      track.appendChild(ref);
+      if (f.pct > COLUMN_MAX_PCT) {
+        track.appendChild(h('span', { class: 'ecol-beyond', 'aria-hidden': 'true' }, '▲'));
+      }
+    }
+    return h('div', { class: 'ecol status-' + (f ? f.status : 'none'), role: 'img',
+      'aria-label': 'Energy: ' + fmt(value, 'kcal') + ' kcal' + (f ? ', ' + Math.round(f.pct) + '% of target (' + f.target + '). ' + f.words + '.' : '.') },
+      h('div', { class: 'ecol-title' }, 'Energy'),
+      track,
+      h('div', { class: 'ecol-pct' }, f ? Math.round(f.pct) + '%' : '–'),
+      h('div', { class: 'ecol-value' }, fmt(value, 'kcal') + (f ? ' / ' + fmt(f.ref, 'kcal') : ''), h('br'), 'kcal'));
   }
 
   function nutrientBars(totals, targets) {
@@ -1091,7 +1125,10 @@
       }, totals, ranges, {
         weight: macroKcal,
         inside: energyShare,
-        footer: energyLine(totals, ranges),
+        side: energyColumn(totals, ranges),
+        // Short labels: a tighter frame lets the rose fill more of its half.
+        viewBox: '-20 26 380 268',
+        footer: false,
         after: macroSum > 0 ? advisedTable : null
       }),
       nutrientChart('Main nutrients', keysOf('main').filter(function (k) {
@@ -2899,7 +2936,7 @@
     });
   }
 
-  var APP_VERSION = '1.40';
+  var APP_VERSION = '1.41';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
