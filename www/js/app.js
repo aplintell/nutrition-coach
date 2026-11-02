@@ -1012,7 +1012,13 @@
       + ' L ' + f(p3) + ' A ' + r0 + ' ' + r0 + ' 0 ' + large + ' 0 ' + f(p4) + ' Z';
   }
 
-  function roseChart(title, keys, shortName, totals, ranges) {
+  /**
+   * opts.weight(key): when given, each slice's angle is its share of the weights (e.g. the energy each
+   * macronutrient supplies) instead of all slices being equal. opts.footer replaces the note under
+   * the chart.
+   */
+  function roseChart(title, keys, shortName, totals, ranges, opts) {
+    opts = opts || {};
     var hasTarget = function (k) {
       var r = ranges && ranges[k];
       return !!(r && (r.min || r.max));
@@ -1027,13 +1033,30 @@
       var tooltip = chartTooltip(chart);
       var box = h('div', { class: 'rose-box' });
       var rose = svg('svg', { viewBox: '-62 20 444 280', class: 'rose', role: 'list', 'aria-label': title + ', each as a % of its daily target' });
-      var step = 360 / withTarget.length;
-      var pad = Math.min(2, step / 8);
+      var weights = withTarget.map(function (k) {
+        return opts.weight ? Math.max(0, opts.weight(k)) : 1;
+      });
+      var weightSum = weights.reduce(function (t, w) {
+        return t + w;
+      }, 0);
+      if (!(weightSum > 0)) {
+        weights = withTarget.map(function () {
+          return 1;
+        });
+        weightSum = weights.length;
+      }
+      var at = 0;
       var inner = 8;
       withTarget.forEach(function (k, i) {
         var f = chartFacts(k, totals[k] || 0, ranges[k]);
-        var a0 = i * step + pad;
-        var a1 = (i + 1) * step - pad;
+        var step = 360 * weights[i] / weightSum;
+        var pad = Math.min(2, step / 8);
+        var a0 = at + pad;
+        var a1 = at + step - pad;
+        at += step;
+        if (step <= 0) {
+          return;
+        }
         rose.appendChild(svg('path', { class: 'rose-track', d: wedgePath(inner, roseRadius(100), a0, a1) }));
         var slice = svg('path', {
           class: 'rose-slice status-' + f.status,
@@ -1067,7 +1090,7 @@
       rose.appendChild(svg('circle', { class: 'rose-ref', cx: ROSE_C, cy: ROSE_C, r: roseRadius(100).toFixed(2), fill: 'none' }));
       box.appendChild(rose);
       chart.appendChild(box);
-      chart.appendChild(h('p', { class: 'muted small rose-legend' }, 'Circle = 100% of your daily target · tap a slice for details'));
+      chart.appendChild(h('p', { class: 'muted small rose-legend' }, opts.footer || 'Circle = 100% of your daily target · tap a slice for details'));
     }
     if (without.length) {
       chart.appendChild(h('div', { class: 'nc-free' },
@@ -1077,6 +1100,13 @@
         })))));
     }
     return chart;
+  }
+
+  /** "Energy 1,620 / 1,900 kcal" (or just the amount when there is no energy target). */
+  function energyLine(totals, ranges) {
+    var e = ranges && ranges.energy_kcal;
+    var ref = e && (e.min || e.max);
+    return 'Energy ' + fmt(totals.energy_kcal || 0, 'kcal') + (ref ? ' / ' + fmt(ref, 'kcal') : '') + ' kcal';
   }
 
   function nutrientBars(totals, targets) {
@@ -1093,9 +1123,15 @@
     }
     return [
       energyPie(totals),
+      // Slice angle = the share of energy each macronutrient supplies; length = % of its target.
       roseChart('Macronutrients', MACRO_KEYS, function (name) {
         return name;
-      }, totals, ranges),
+      }, totals, ranges, {
+        weight: function (k) {
+          return (totals[k] || 0) * ({ protein_g: 4, carbs_g: 4, fat_g: 9 })[k];
+        },
+        footer: energyLine(totals, ranges)
+      }),
       nutrientChart('Main nutrients', keysOf('main').filter(function (k) {
         return MACRO_KEYS.indexOf(k) === -1;
       }), totals, ranges),
@@ -2901,7 +2937,7 @@
     });
   }
 
-  var APP_VERSION = '1.38';
+  var APP_VERSION = '1.39';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
