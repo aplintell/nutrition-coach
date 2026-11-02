@@ -253,9 +253,11 @@ label.field textarea {
   border-top: 1px solid var(--border);
 }
 
+/* Chart titles read as the card's headings (same as a card h2). */
 .nchart h3 {
-  margin: 0 0 8px;
-  font-size: 0.92rem;
+  margin: 0 0 10px;
+  font-size: 1rem;
+  color: var(--text);
 }
 
 /* Rose chart: one slice per nutrient, length = % of the daily target. */

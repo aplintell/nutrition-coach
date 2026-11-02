@@ -1251,7 +1251,6 @@
       // (Out-of-date targets are flagged on the Profile screen only.)
 
       viewEl.appendChild(h('div', { class: 'card' },
-        h('h2', null, 'Today\'s totals'),
         meals.length === 0 ? h('p', { class: 'muted' }, 'No meals yet.') : null,
         nutrientBars(totals, targets)));
 
@@ -2772,7 +2771,7 @@
     });
   }
 
-  var APP_VERSION = '1.47';
+  var APP_VERSION = '1.48';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
