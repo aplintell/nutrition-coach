@@ -1567,33 +1567,98 @@
     'walk-km': 'Walk (km)', sunbath: 'Sunbath'
   };
 
-  /** A copy of list sorted by kcal, biggest first. */
+  /** A copy of list sorted by kcal (or another amount), biggest first. */
   function byKcal(list, kcalOf) {
     return list.slice().sort(function (a, b) {
       return (kcalOf(b) || 0) - (kcalOf(a) || 0);
     });
   }
 
+  // What the meal list can be ordered by, in the groups of the Today charts. The choice is a
+  // per-device display preference (localStorage), kcal by default.
+  function mealOrderGroups() {
+    var vitamin = function (k) {
+      return /^vitamin_|^folate/.test(k);
+    };
+    var micro = NUTRIENTS.filter(function (n) {
+      return n.group !== 'main';
+    }).map(function (n) {
+      return n.key;
+    });
+    return [
+      { label: 'Energy', keys: ['energy_kcal'] },
+      { label: 'Macronutrients', keys: MACRO_KEYS },
+      { label: 'Main nutrients', keys: MAIN_ROSE_KEYS.concat(INFO_KEYS) },
+      { label: 'Vitamins', keys: micro.filter(vitamin) },
+      { label: 'Minerals', keys: micro.filter(function (k) {
+        return !vitamin(k);
+      }) }
+    ];
+  }
+
+  function mealOrder() {
+    try {
+      var k = localStorage.getItem('mealOrder');
+      return NUTRIENT_BY_KEY[k] ? k : 'energy_kcal';
+    } catch (e) {
+      return 'energy_kcal';
+    }
+  }
+
   function mealsCard(meals, isToday) {
-    return h('div', { class: 'card' },
-      h('h2', null, 'Meals (' + meals.length + ')'),
+    var order = mealOrder();
+    var picker = h('select', { class: 'order-select', 'aria-label': 'Order by' }, mealOrderGroups().map(function (g) {
+      return h('optgroup', { label: g.label }, g.keys.map(function (k) {
+        return h('option', { value: k }, MAIN_SHORT[k] || NUTRIENT_BY_KEY[k].name);
+      }));
+    }));
+    picker.value = order;
+    var card = h('div', { class: 'card' },
+      h('div', { class: 'card-head' },
+        h('h2', null, 'Meals (' + meals.length + ')'),
+        meals.length > 1 ? h('label', { class: 'order-by' }, h('span', { class: 'muted small' }, 'Order by'), picker) : null),
       meals.length === 0 ? h('p', { class: 'muted' }, isToday ? 'Before eating, tap "+ Meal" and take a photo of the food.' : 'No meals.') : null,
-      meals.length ? h('div', { class: 'bubbles', role: 'list' }, byKcal(meals, function (m) {
-        return m.nutrients.energy_kcal;
-      }).map(function (m) {
-        var kcal = m.nutrients.energy_kcal || 0;
-        var size = Math.round(Math.min(BUBBLE_MAX, Math.max(BUBBLE_MIN, BUBBLE_REF * Math.sqrt(kcal / BUBBLE_REF_KCAL))));
+      meals.length ? mealBubbles(meals, order) : null,
+      meals.length ? h('p', { class: 'muted small' }, 'Tap a meal to see its name, tap again to open it · drag it to the bin to delete.') : null);
+    picker.addEventListener('change', function () {
+      try {
+        localStorage.setItem('mealOrder', picker.value);
+      } catch (e) {
+        // Storage blocked: the order still changes for now.
+      }
+      clearSelection();
+      card.replaceWith(mealsCard(meals, isToday));
+    });
+    return card;
+  }
+
+  /**
+   * The bubbles, biggest first by the chosen nutrient; size and the figure under each follow it.
+   * kcal keeps its fixed scale (comparable across days); other nutrients are scaled to the
+   * biggest meal in the list.
+   */
+  function mealBubbles(meals, order) {
+    var n = NUTRIENT_BY_KEY[order];
+    var valueOf = function (m) {
+      return m.nutrients[order] || 0;
+    };
+    var top = Math.max.apply(null, meals.map(valueOf));
+    var ref = order === 'energy_kcal' ? BUBBLE_REF_KCAL : top;
+    return h('div', { class: 'bubbles', role: 'list' }, byKcal(meals, valueOf).map(function (m) {
+        var value = valueOf(m);
+        var amount = fmt(value, n.unit) + ' ' + n.unit;
+        var size = Math.round(Math.min(BUBBLE_MAX, Math.max(BUBBLE_MIN, ref > 0 ? BUBBLE_REF * Math.sqrt(value / ref) : 0)));
         var circle = h('span', { class: 'bubble-circle' + (m.thumb ? '' : ' no-photo') },
           m.thumb ? h('img', { src: m.thumb, alt: '', draggable: 'false' }) : '🍽️');
         circle.style.width = size + 'px';
         circle.style.height = size + 'px';
         var bubble = h('div', {
           class: 'bubble', role: 'listitem', tabindex: '0',
-          'aria-label': m.name + ', ' + fmt(kcal, 'kcal') + ' kcal, ' + m.time + '. Tap to select, tap again to open; drag to the bin to delete.'
+          'aria-label': m.name + ', ' + amount + ', ' + m.time + '. Tap to select, tap again to open; drag to the bin to delete.'
         },
           h('span', { class: 'bubble-name', 'aria-hidden': 'true' }, m.name),
           circle,
-          h('span', { class: 'bubble-kcal' }, fmt(kcal, 'kcal') + ' kcal'));
+          h('span', { class: 'bubble-kcal' }, amount));
         bubbleActions(bubble, {
           onSelect: function (b) {
             selectBubble(b);
@@ -1612,8 +1677,7 @@
           }
         });
         return bubble;
-      })) : null,
-      meals.length ? h('p', { class: 'muted small' }, 'Tap a meal to see its name, tap again to open it · drag it to the bin to delete.') : null);
+      }));
   }
 
   // Food: today's meals and adding one
@@ -3126,7 +3190,7 @@
     });
   }
 
-  var APP_VERSION = '1.59';
+  var APP_VERSION = '1.60';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {

@@ -825,6 +825,43 @@ div.bubble {
   margin-top: 10px;
 }
 
+/* Meals card: title on the left, "Order by" picker on the right. */
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-bottom: 10px;
+}
+
+.card-head h2 {
+  margin: 0;
+}
+
+.order-by {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.order-select {
+  max-width: 140px;
+  padding: 6px 8px;
+  font-size: 0.82rem;
+  color: inherit;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.order-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 .bubble-kcal {
   font-size: 0.78rem;
   font-weight: 600;

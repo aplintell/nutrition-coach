@@ -53,6 +53,7 @@
     'Dark': 'Tối',
     'Light.': 'Nhẹ nhàng.',
     'Drop to delete': 'Thả vào để xóa',
+    'Order by': 'Xếp theo',
     'Get started': 'Bắt đầu',
     'Error:': 'Lỗi:',
     'low': 'thấp',
@@ -467,8 +468,8 @@
     }],
     [/^(.+) · max (.+)$/, '$1 · tối đa $2'],
     // Meals and exercise bubbles.
-    [/^(.+), (.+) kcal, (\d\d:\d\d)\. Tap to select, tap again to open; drag to the bin to delete\.$/,
-      '@1, $2 kcal, $3. Chạm để chọn, chạm lần nữa để mở; kéo vào thùng rác để xóa.'],
+    [/^(.+), (.+), (\d\d:\d\d)\. Tap to select, tap again to open; drag to the bin to delete\.$/,
+      '@1, $2, $3. Chạm để chọn, chạm lần nữa để mở; kéo vào thùng rác để xóa.'],
     [/^(.+), ([\d.,]+) (times|min|km|sets), ~(.+) kcal$/, function (m) {
       return t(m[1]) + ', ' + m[2] + ' ' + t(m[3]) + ', ~' + m[4] + ' kcal';
     }],
@@ -653,7 +654,7 @@
 
   // ---- Translating the page as it is drawn ----
 
-  var ATTRS = ['placeholder', 'aria-label', 'title', 'alt'];
+  var ATTRS = ['placeholder', 'aria-label', 'title', 'alt', 'label'];
 
   function translateNode(node) {
     if (node.nodeType === 3) {
