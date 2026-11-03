@@ -48,13 +48,20 @@
     sunbath: 'sun', other: 'other'
   };
 
-  /** A new <svg> element with the icon for an exercise type (aria-hidden: the name is said elsewhere). */
-  function forType(type) {
+  // Tabler "trash" (MIT), for the drop-to-delete bin.
+  ICONS.trash = '<path d="M4 7l16 0"/><path d="M10 11l0 6"/><path d="M14 11l0 6"/><path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12"/><path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3"/>';
+
+  function svg(name) {
     var holder = document.createElement('span');
     holder.innerHTML = '<svg class="ex-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"'
-      + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[FOR_TYPE[type] || 'other'] + '</svg>';
+      + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + '</svg>';
     return holder.firstChild;
   }
 
-  global.ExerciseIcons = { forType: forType };
+  /** A new <svg> element with the icon for an exercise type (aria-hidden: the name is said elsewhere). */
+  function forType(type) {
+    return svg(FOR_TYPE[type] || 'other');
+  }
+
+  global.ExerciseIcons = { forType: forType, svg: svg };
 })(window);

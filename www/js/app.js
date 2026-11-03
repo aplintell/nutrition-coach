@@ -1260,6 +1260,7 @@
   var TABS = ['today', 'food', 'workout', 'history', 'profile', 'settings'];
 
   function setScreen(title, tab, showBack) {
+    clearSelection();
     titleEl.textContent = title;
     backBtn.hidden = !showBack;
     document.querySelectorAll('.tabbar a').forEach(function (a) {
@@ -1326,6 +1327,184 @@
     });
   }
 
+  // ---- Bubbles: select by tap, drag to the bin to delete ----
+  //
+  // Tapping a bubble selects it: its name shows above it, and a recycle bin appears in the middle of
+  // the screen. Only the selected bubble can be dragged (so swiping over others still scrolls); dropped
+  // on the bin, it is deleted, with an Undo bar for a few seconds. Tapping anywhere else deselects.
+  // Keyboard: Enter selects, Delete removes the selected one.
+  var selection = null;
+  var trashEl = null;
+
+  function trash() {
+    if (!trashEl) {
+      trashEl = h('div', { class: 'trash-drop', hidden: true, 'aria-hidden': 'true' },
+        ExerciseIcons.svg('trash'), h('span', null, 'Drop to delete'));
+      document.body.appendChild(trashEl);
+    }
+    return trashEl;
+  }
+
+  function overTrash(x, y) {
+    var r = trash().getBoundingClientRect();
+    var m = 24;
+    return x > r.left - m && x < r.right + m && y > r.top - m && y < r.bottom + m;
+  }
+
+  function clearSelection() {
+    if (!selection) {
+      return;
+    }
+    var s = selection;
+    selection = null;
+    s.bubble.classList.remove('selected');
+    if (s.onClear) {
+      s.onClear();
+    }
+    trash().hidden = true;
+  }
+
+  /** Selects a bubble; `inside` are other elements whose taps keep it selected (e.g. its add box). */
+  function selectBubble(bubble, inside, onClear) {
+    clearSelection();
+    bubble.classList.add('selected');
+    selection = { bubble: bubble, inside: inside || [], onClear: onClear };
+    trash().hidden = false;
+  }
+
+  document.addEventListener('pointerdown', function (ev) {
+    if (!selection) {
+      return;
+    }
+    var keep = [selection.bubble].concat(selection.inside).some(function (el) {
+      return el && el.contains(ev.target);
+    });
+    if (!keep) {
+      clearSelection();
+    }
+  }, true);
+
+  var toastEl = null;
+  var toastTimer = null;
+
+  /** A short message above the tab bar with an action (e.g. Undo), gone after a few seconds. */
+  function toast(text, actionLabel, action) {
+    if (toastEl) {
+      toastEl.remove();
+    }
+    clearTimeout(toastTimer);
+    var el = h('div', { class: 'toast', role: 'status' }, h('span', null, text),
+      action ? h('button', {
+        type: 'button',
+        onclick: function () {
+          el.remove();
+          action();
+        }
+      }, actionLabel) : null);
+    document.body.appendChild(el);
+    toastEl = el;
+    toastTimer = setTimeout(function () {
+      el.remove();
+    }, 6000);
+  }
+
+  /**
+   * Makes a bubble selectable and, once selected, draggable to the bin. onSelect(bubble) runs on the
+   * first tap, onTapSelected() on a tap while already selected, onDelete() when dropped on the bin.
+   */
+  function bubbleActions(bubble, opts) {
+    var drag = null;
+    var dragged = 0;
+    bubble.addEventListener('click', function () {
+      if (Date.now() - dragged < 400) {
+        return;
+      }
+      if (bubble.classList.contains('selected')) {
+        if (opts.onTapSelected) {
+          opts.onTapSelected();
+        }
+      } else {
+        opts.onSelect(bubble);
+      }
+    });
+    bubble.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        bubble.click();
+      } else if ((ev.key === 'Delete' || ev.key === 'Backspace') && bubble.classList.contains('selected')) {
+        ev.preventDefault();
+        clearSelection();
+        opts.onDelete();
+      }
+    });
+    bubble.addEventListener('pointerdown', function (ev) {
+      if (!bubble.classList.contains('selected') || ev.button > 0) {
+        return;
+      }
+      drag = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, ghost: null };
+    });
+    bubble.addEventListener('pointermove', function (ev) {
+      if (!drag || ev.pointerId !== drag.id) {
+        return;
+      }
+      if (!drag.ghost) {
+        if (Math.abs(ev.clientX - drag.x) + Math.abs(ev.clientY - drag.y) < 8) {
+          return;
+        }
+        var circle = bubble.querySelector('.bubble-circle');
+        drag.ghost = circle.cloneNode(true);
+        drag.ghost.classList.add('drag-ghost');
+        drag.ghost.style.width = circle.offsetWidth + 'px';
+        drag.ghost.style.height = circle.offsetHeight + 'px';
+        document.body.appendChild(drag.ghost);
+        bubble.classList.add('dragging');
+        trash().classList.add('ready');
+        try {
+          bubble.setPointerCapture(ev.pointerId);
+        } catch (e) {
+          // Not capturable (pointer already gone): the move/up events still arrive on the bubble.
+        }
+      }
+      ev.preventDefault();
+      drag.ghost.style.left = ev.clientX + 'px';
+      drag.ghost.style.top = ev.clientY + 'px';
+      trash().classList.toggle('active', overTrash(ev.clientX, ev.clientY));
+    });
+    function end(ev, cancelled) {
+      if (!drag || ev.pointerId !== drag.id) {
+        return;
+      }
+      var d = drag;
+      drag = null;
+      if (!d.ghost) {
+        return;
+      }
+      dragged = Date.now();
+      d.ghost.remove();
+      bubble.classList.remove('dragging');
+      trash().classList.remove('ready', 'active');
+      if (!cancelled && overTrash(ev.clientX, ev.clientY)) {
+        clearSelection();
+        opts.onDelete();
+      }
+    }
+    bubble.addEventListener('pointerup', function (ev) {
+      end(ev, false);
+    });
+    bubble.addEventListener('pointercancel', function (ev) {
+      end(ev, true);
+    });
+  }
+
+  /** Deletes, redraws and offers Undo (restore puts the records back as they were). */
+  function deleteWithUndo(label, remove, restore) {
+    return remove().then(rerenderKeepingScroll).then(function () {
+      toast(label + ' deleted', 'Undo', function () {
+        restore().then(rerenderKeepingScroll);
+      });
+    });
+  }
+
   // Meals as bubbles in one box: a bubble's area grows with the meal's kcal (diameter ∝ √kcal, so a
   // meal twice the energy looks twice as big, not four times), with the meal photo inside, the kcal
   // under it, and the name on hover / keyboard focus. Tapping a bubble opens the meal. The scale is
@@ -1365,14 +1544,33 @@
           m.thumb ? h('img', { src: m.thumb, alt: '' }) : '🍽️');
         circle.style.width = size + 'px';
         circle.style.height = size + 'px';
-        return h('a', {
-          class: 'bubble', href: '#meal/' + m.id, role: 'listitem',
-          'aria-label': m.name + ', ' + fmt(kcal, 'kcal') + ' kcal, ' + m.time
+        var bubble = h('div', {
+          class: 'bubble', role: 'listitem', tabindex: '0',
+          'aria-label': m.name + ', ' + fmt(kcal, 'kcal') + ' kcal, ' + m.time + '. Tap to select, tap again to open; drag to the bin to delete.'
         },
           h('span', { class: 'bubble-name', 'aria-hidden': 'true' }, m.name),
           circle,
           h('span', { class: 'bubble-kcal' }, fmt(kcal, 'kcal') + ' kcal'));
-      })) : null);
+        bubbleActions(bubble, {
+          onSelect: function (b) {
+            selectBubble(b);
+          },
+          onTapSelected: function () {
+            location.hash = '#meal/' + m.id;
+          },
+          onDelete: function () {
+            return Db.get('photos', m.id).then(function (photo) {
+              return deleteWithUndo(m.name, function () {
+                return Promise.all([Db.remove('meals', m.id), Db.remove('photos', m.id)]);
+              }, function () {
+                return Promise.all([Db.put('meals', m), photo ? Db.put('photos', photo) : null]);
+              });
+            });
+          }
+        });
+        return bubble;
+      })) : null,
+      meals.length ? h('p', { class: 'muted small' }, 'Tap a meal to see its name, tap again to open it · drag it to the bin to delete.') : null);
   }
 
   // Food: today's meals and adding one
@@ -1429,46 +1627,28 @@
     var card = h('div', { class: 'card' }, h('h2', null, '🏃 Exercise' + (exercises.length ? ' (~' + burned + ' kcal)' : '')));
 
     if (exercises.length) {
-      // Bubbles like the meal list: size by kcal burned, an icon inside, kcal below, the name on
-      // hover. Tapping one shows its details with Add more / Delete under the box; holding it for
-      // 0.5 s goes straight to adding more.
+      // Bubbles like the meal list: size by kcal burned, an icon inside, kcal below. Tapping one
+      // selects it (name above, bin in the middle) and opens its add-more box under the bubbles;
+      // dragged to the bin, it is deleted.
       var detail = h('div', { class: 'ex-detail', hidden: true });
       var bubbles = h('div', { class: 'bubbles', role: 'list' });
-      var select = function (e, bubble, addMore) {
-        bubbles.querySelectorAll('.bubble.selected').forEach(function (el) {
-          el.classList.remove('selected');
+      var select = function (e, bubble) {
+        selectBubble(bubble, [detail], function () {
+          detail.hidden = true;
+          detail.textContent = '';
         });
-        bubble.classList.add('selected');
         detail.textContent = '';
         detail.hidden = false;
-        detail.appendChild(h('div', { class: 'ex-detail-head' },
-          h('strong', null, exerciseName(e) + ' · ' + e.amount + ' ' + unitText(e.unit)),
-          h('span', { class: 'muted small' }, '~' + e.kcal + ' kcal')));
         if (e.vitamin_d_ug) {
           detail.appendChild(h('div', { class: 'muted small' }, '☀️ ~' + fmt(e.vitamin_d_ug, 'µg') + ' µg vitamin D · '
             + (SUN_SKIN[e.sunSkin] || SUN_SKIN.arms).label.toLowerCase() + ', ' + (SUN_TIME[e.sunTime] || SUN_TIME.mild).label.toLowerCase()));
         }
-        var showAddMore = function () {
-          if (!detail.querySelector('form')) {
-            detail.appendChild(addMoreForm(e, weight));
-          }
-          // Cursor at the end of the prefilled number, ready to edit it.
-          var input = detail.querySelector('form input');
-          input.focus();
-          input.setSelectionRange(input.value.length, input.value.length);
-        };
-        detail.appendChild(h('div', { class: 'btn-row' },
-          h('button', { class: 'btn', type: 'button', onclick: showAddMore }, '+ Add more'),
-          h('button', {
-            class: 'btn danger',
-            type: 'button',
-            onclick: function () {
-              Db.remove('exercises', e.id).then(rerenderKeepingScroll);
-            }
-          }, 'Delete')));
-        if (addMore) {
-          showAddMore();
-        }
+        var form = addMoreForm(e, weight);
+        detail.appendChild(form);
+        // Cursor at the end of the prefilled number, ready to edit it.
+        var input = form.querySelector('input');
+        input.focus({ preventScroll: true });
+        input.setSelectionRange(input.value.length, input.value.length);
       };
       exercises.forEach(function (e) {
         var size = Math.round(Math.min(BUBBLE_MAX, Math.max(BUBBLE_MIN, BUBBLE_REF * Math.sqrt((e.kcal || 0) / EX_BUBBLE_REF_KCAL))));
@@ -1482,28 +1662,23 @@
           h('span', { class: 'bubble-name', 'aria-hidden': 'true' }, exerciseName(e) + ' · ' + e.amount + ' ' + unitText(e.unit)),
           circle,
           h('span', { class: 'bubble-kcal' }, '~' + e.kcal + ' kcal'));
-        var heldAt = 0;
-        bubble.addEventListener('click', function () {
-          // The click that ends a hold would otherwise close the add-more box the hold just opened.
-          if (Date.now() - heldAt > 700) {
-            select(e, bubble, false);
+        bubbleActions(bubble, {
+          onSelect: function (b) {
+            select(e, b);
+          },
+          onDelete: function () {
+            return deleteWithUndo(exerciseName(e), function () {
+              return Db.remove('exercises', e.id);
+            }, function () {
+              return Db.put('exercises', e);
+            });
           }
-        });
-        bubble.addEventListener('keydown', function (ev) {
-          if (ev.key === 'Enter' || ev.key === ' ') {
-            ev.preventDefault();
-            select(e, bubble, false);
-          }
-        });
-        onLongPress(bubble, function () {
-          heldAt = Date.now();
-          select(e, bubble, true);
         });
         bubbles.appendChild(bubble);
       });
       card.appendChild(bubbles);
       card.appendChild(detail);
-      card.appendChild(h('p', { class: 'muted small' }, 'Tap an exercise for details · hold it 0.5 s to add more times / minutes.'));
+      card.appendChild(h('p', { class: 'muted small' }, 'Tap an exercise to add more times / minutes · drag it to the bin to delete.'));
     } else {
       card.appendChild(h('p', { class: 'muted' }, 'No exercise yet today? Add it here and the day\'s energy target goes up to match.'));
     }
@@ -1630,67 +1805,6 @@
     card.appendChild(form);
     card.openAddForm = openAddForm;
     return card;
-  }
-
-  /** Calls fn when el is held for half a second without moving (a tap or a scroll doesn't count). */
-  /**
-   * Calls fn when el is held for half a second without moving (a tap or a scroll doesn't count),
-   * and again when the finger lifts: focus set from a timer doesn't bring up Android's keyboard,
-   * focus set while handling the release does.
-   */
-  function onLongPress(el, fn) {
-    var timer = null;
-    var held = false;
-    var startX = 0;
-    var startY = 0;
-    function cancel() {
-      clearTimeout(timer);
-      timer = null;
-    }
-    el.addEventListener('pointerdown', function (ev) {
-      held = false;
-      if (ev.target.closest('button')) {
-        return;
-      }
-      startX = ev.clientX;
-      startY = ev.clientY;
-      cancel();
-      timer = setTimeout(function () {
-        timer = null;
-        held = true;
-        if (navigator.vibrate) {
-          navigator.vibrate(30);
-        }
-        fn();
-      }, 500);
-    });
-    el.addEventListener('pointermove', function (ev) {
-      if (timer && Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) > 10) {
-        cancel();
-      }
-    });
-    ['pointercancel', 'pointerleave'].forEach(function (type) {
-      el.addEventListener(type, cancel);
-    });
-    el.addEventListener('pointerup', function (ev) {
-      cancel();
-      if (held && ev.pointerType === 'mouse') {
-        held = false;
-        fn();
-      }
-    });
-    el.addEventListener('touchend', function (ev) {
-      cancel();
-      if (held) {
-        held = false;
-        // No follow-up mouse events, which would move focus back to the row.
-        ev.preventDefault();
-        fn();
-      }
-    });
-    el.addEventListener('contextmenu', function (ev) {
-      ev.preventDefault();
-    });
   }
 
   /** Inline form under an exercise row: the number typed is added to the times already logged. */
@@ -2957,7 +3071,7 @@
     });
   }
 
-  var APP_VERSION = '1.55';
+  var APP_VERSION = '1.56';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {

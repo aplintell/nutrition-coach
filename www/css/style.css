@@ -689,7 +689,6 @@ label.field textarea {
   object-fit: cover;
 }
 
-.bubble:hover .bubble-circle,
 .bubble:focus-visible .bubble-circle {
   transform: scale(1.06);
   box-shadow: 0 0 0 3px var(--accent), var(--shadow);
@@ -855,9 +854,124 @@ div.bubble {
   display: none;
 }
 
-.bubble:hover .bubble-name,
-.bubble:focus-visible .bubble-name {
+.bubble.selected .bubble-name {
   display: block;
+}
+
+/* Only the selected bubble can be dragged (to the bin); swiping over others still scrolls. */
+div.bubble {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.bubble.selected {
+  touch-action: none;
+}
+
+.bubble.dragging .bubble-circle {
+  opacity: 0.3;
+}
+
+.drag-ghost {
+  position: fixed;
+  z-index: 80;
+  margin: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(1.05);
+  box-shadow: 0 12px 28px rgba(21, 29, 72, 0.3);
+}
+
+/* The bin in the middle of the screen while a bubble is selected; it grows while dragging and turns
+   red when the bubble is over it. Taps pass through it. */
+.trash-drop {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 2px dashed var(--over);
+  background: var(--surface);
+  color: var(--over);
+  box-shadow: var(--shadow);
+  /* Faint while idle (it sits over the page); full strength once a drag starts. */
+  opacity: 0.55;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition: transform 0.12s ease, background 0.12s ease, opacity 0.12s ease;
+}
+
+.trash-drop .ex-icon {
+  width: 28px;
+  height: 28px;
+}
+
+.trash-drop span {
+  display: none;
+  font-size: 0.5rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.trash-drop.ready span {
+  display: block;
+}
+
+.trash-drop.ready {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1.4);
+}
+
+.trash-drop.active {
+  opacity: 1;
+  background: var(--over);
+  border-style: solid;
+  color: #ffffff;
+  transform: translate(-50%, -50%) scale(1.6);
+}
+
+/* Short message with an action (Undo) under the header, clear of the floating buttons. */
+.toast {
+  position: fixed;
+  left: 50%;
+  top: calc(66px + env(safe-area-inset-top));
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: calc(100% - 32px);
+  padding: 10px 12px 10px 16px;
+  border-radius: 14px;
+  background: var(--tip-bg);
+  color: var(--tip-text);
+  font-size: 0.85rem;
+  box-shadow: 0 10px 28px rgba(21, 29, 72, 0.3);
+  transform: translateX(-50%);
+}
+
+.toast span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toast button {
+  flex: none;
+  border: none;
+  border-radius: 10px;
+  padding: 6px 12px;
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .meal-row {
