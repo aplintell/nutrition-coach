@@ -1257,8 +1257,8 @@
       if (isToday) {
         // Meals and workouts have their own tabs; today shows only a one-line count of each.
         viewEl.appendChild(h('div', { class: 'grid-2', style: 'margin:-10px 0 14px' },
-          h('a', { class: 'btn', href: '#food' }, '🍽️ ' + meals.length + (meals.length === 1 ? ' meal' : ' meals')),
-          h('a', { class: 'btn', href: '#workout' }, '🏃 ' + exercises.length + (exercises.length === 1 ? ' workout' : ' workouts') + (burned ? ' · ~' + burned + ' kcal' : ''))));
+          h('a', { class: 'btn tile cream', href: '#food' }, '🍽️ ' + meals.length + (meals.length === 1 ? ' meal' : ' meals')),
+          h('a', { class: 'btn tile mint', href: '#workout' }, '🏃 ' + exercises.length + (exercises.length === 1 ? ' workout' : ' workouts') + (burned ? ' · ~' + burned + ' kcal' : ''))));
         viewEl.appendChild(planCard(key, meals, totals, targets, plan, exercises));
       } else {
         viewEl.appendChild(exerciseCard(key, exercises, profile));
@@ -2771,7 +2771,7 @@
     });
   }
 
-  var APP_VERSION = '1.48';
+  var APP_VERSION = '1.49';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {

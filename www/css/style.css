@@ -1,16 +1,96 @@
+/* Poppins (SIL Open Font License, see fonts/OFL.txt), bundled so the app works offline. */
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(../fonts/poppins-latin-ext-400-normal.woff2) format('woff2');
+  unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(../fonts/poppins-latin-400-normal.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url(../fonts/poppins-latin-ext-500-normal.woff2) format('woff2');
+  unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url(../fonts/poppins-latin-500-normal.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url(../fonts/poppins-latin-ext-600-normal.woff2) format('woff2');
+  unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url(../fonts/poppins-latin-600-normal.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(../fonts/poppins-latin-ext-700-normal.woff2) format('woff2');
+  unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(../fonts/poppins-latin-700-normal.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Light dashboard theme: white cards on a pale blue-grey page, navy text, indigo accent.
+   Status colours (met / short / over) are stepped for a white surface and checked for colour-blind
+   separation; on charts they always come with amounts and words. */
 :root {
-  --bg: #0f1513;
-  --surface: #18211e;
-  --surface-alt: #222d29;
-  --border: #31403b;
-  --text: #f1f5f3;
-  --text-dim: #98a8a2;
-  --accent: #2fbf71;
-  --accent-text: #06140c;
-  --ok: #2fbf71;
-  --under: #f2b33d;
-  --over: #ff5c5c;
-  --info: #4fa3ff;
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --surface-alt: #f2f3f8;
+  --border: #e9ebf3;
+  --text: #151d48;
+  --text-dim: #737791;
+  --accent: #5d5fef;
+  --accent-soft: #eeefff;
+  --accent-text: #ffffff;
+  --ok: #0e9f6e;
+  --under: #e8890c;
+  --over: #e5484d;
+  --info: #5d5fef;
+  --shadow: 0 4px 20px rgba(21, 29, 72, 0.06);
+  --tile-cream: #fff4de;
+  --tile-mint: #dcfce7;
 }
 
 * {
@@ -21,7 +101,7 @@ html, body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   font-size: 15px;
   -webkit-tap-highlight-color: transparent;
 }
@@ -33,6 +113,21 @@ body {
 
 [hidden] {
   display: none !important;
+}
+
+/* Form controls use the app font too (browsers don't pass it on by default). */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+/* Checkboxes, radio buttons and sliders in the accent colour. */
+input[type="radio"],
+input[type="checkbox"],
+input[type="range"] {
+  accent-color: var(--accent);
 }
 
 /* ---- Header and tab bar ---- */
@@ -48,12 +143,13 @@ body {
   padding-top: calc(14px + env(safe-area-inset-top));
   background: var(--surface);
   border-bottom: 1px solid var(--border);
+  box-shadow: 0 2px 12px rgba(21, 29, 72, 0.04);
 }
 
 .topbar h1 {
   margin: 0;
-  font-size: 1.1rem;
-  font-weight: 700;
+  font-size: 1.15rem;
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -77,7 +173,8 @@ body {
   display: flex;
   background: var(--surface);
   border-top: 1px solid var(--border);
-  padding-bottom: env(safe-area-inset-bottom);
+  box-shadow: 0 -4px 16px rgba(21, 29, 72, 0.05);
+  padding: 4px 4px env(safe-area-inset-bottom);
 }
 
 .tabbar a {
@@ -86,10 +183,12 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  padding: 8px 0 10px;
+  margin: 4px 2px 6px;
+  padding: 5px 0 6px;
+  border-radius: 12px;
   color: var(--text-dim);
   text-decoration: none;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
 }
 
 .tabbar a span {
@@ -98,7 +197,8 @@ body {
 
 .tabbar a.active {
   color: var(--accent);
-  font-weight: 700;
+  background: var(--accent-soft);
+  font-weight: 600;
 }
 
 .container {
@@ -112,19 +212,22 @@ body {
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 14px;
+  border-radius: 18px;
+  padding: 16px;
   margin-bottom: 14px;
+  box-shadow: var(--shadow);
 }
 
 .card h2 {
   margin: 0 0 10px;
   font-size: 1rem;
+  font-weight: 600;
 }
 
 .card h3 {
   margin: 14px 0 6px;
   font-size: 0.9rem;
+  font-weight: 600;
   color: var(--text-dim);
 }
 
@@ -148,19 +251,32 @@ p {
   margin-top: 10px;
   border-radius: 12px;
   border: 1px solid var(--border);
-  background: var(--surface-alt);
+  background: var(--surface);
   color: var(--text);
+  font-family: inherit;
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
   text-align: center;
+  text-decoration: none;
 }
 
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-text);
+  box-shadow: 0 6px 16px rgba(93, 95, 239, 0.28);
 }
+
+/* Today's shortcuts to Food and Workout: pastel tiles. */
+.btn.tile {
+  border: none;
+  padding: 16px 10px;
+  border-radius: 16px;
+}
+
+.btn.tile.cream { background: var(--tile-cream); }
+.btn.tile.mint { background: var(--tile-mint); }
 
 .btn.danger {
   color: var(--over);
@@ -206,8 +322,16 @@ label.field textarea {
   font-family: inherit;
   background: var(--surface-alt);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   color: var(--text);
+}
+
+label.field input:focus,
+label.field select:focus,
+label.field textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 label.field textarea {
@@ -320,7 +444,7 @@ label.field textarea {
 }
 
 .rose-inside {
-  fill: #06140c;
+  fill: #151d48;
   font-size: 17.6px;
   font-weight: 700;
   pointer-events: none;
@@ -389,7 +513,7 @@ label.field textarea {
   position: absolute;
   left: 0;
   right: 0;
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(21, 29, 72, 0.08);
 }
 
 .ecol-fill {
@@ -441,20 +565,20 @@ label.field textarea {
   z-index: 5;
   min-width: 170px;
   padding: 8px 10px;
-  border-radius: 8px;
-  background: #0b100e;
-  border: 1px solid var(--border);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  border-radius: 10px;
+  background: var(--text);
+  border: none;
+  box-shadow: 0 8px 24px rgba(21, 29, 72, 0.25);
   font-size: 0.78rem;
   line-height: 1.45;
-  color: var(--text-dim);
+  color: rgba(255, 255, 255, 0.78);
   pointer-events: none;
 }
 
 .nc-tip strong {
   display: block;
   font-size: 0.95rem;
-  color: var(--text);
+  color: #ffffff;
 }
 
 .nc-free {
@@ -474,9 +598,9 @@ label.field textarea {
   margin-left: 4px;
 }
 
-.tag.over { background: rgba(255, 92, 92, 0.15); color: var(--over); }
-.tag.under { background: rgba(242, 179, 61, 0.15); color: var(--under); }
-.tag.ok { background: rgba(47, 191, 113, 0.15); color: var(--ok); }
+.tag.over { background: #ffe2e5; color: #b42318; }
+.tag.under { background: #fff4de; color: #9a5b06; }
+.tag.ok { background: #dcfce7; color: #087a52; }
 
 /* ---- Meals ---- */
 
@@ -498,7 +622,7 @@ label.field textarea {
   width: 56px;
   height: 56px;
   flex: none;
-  border-radius: 10px;
+  border-radius: 14px;
   object-fit: cover;
   background: var(--surface-alt);
   display: flex;
@@ -531,8 +655,8 @@ label.field textarea {
   justify-content: center;
   width: 100%;
   min-height: 200px;
-  border: 2px dashed var(--border);
-  border-radius: 14px;
+  border: 2px dashed #d5d8ea;
+  border-radius: 18px;
   background: var(--surface);
   color: var(--text-dim);
   font-size: 0.95rem;
@@ -558,10 +682,10 @@ label.field textarea {
 }
 
 .warning {
-  background: rgba(255, 92, 92, 0.1);
+  background: #fff1f2;
   border-left: 3px solid var(--over);
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: 10px;
   margin: 6px 0;
   font-size: 0.88rem;
 }
@@ -576,10 +700,11 @@ label.field textarea {
   flex: 1;
   min-width: 56px;
   padding: 9px 4px;
-  border-radius: 10px;
+  border-radius: 12px;
   border: 1px solid var(--border);
-  background: var(--surface-alt);
+  background: var(--surface);
   color: var(--text);
+  font-family: inherit;
   font-weight: 600;
 }
 
@@ -670,9 +795,10 @@ table.simple td:last-child {
   border: none;
   background: var(--accent);
   color: var(--accent-text);
+  font-family: inherit;
   font-size: 1rem;
-  font-weight: 700;
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  font-weight: 600;
+  box-shadow: 0 8px 20px rgba(93, 95, 239, 0.35);
   cursor: pointer;
 }
 
@@ -686,7 +812,7 @@ table.simple td:last-child {
   justify-content: center;
   gap: 14px;
   padding: 24px;
-  background: rgba(10, 14, 13, 0.82);
+  background: rgba(246, 247, 251, 0.92);
   text-align: center;
 }
 
@@ -712,7 +838,7 @@ table.simple td:last-child {
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(10, 14, 13, 0.82);
+  background: rgba(21, 29, 72, 0.45);
 }
 
 .paste-dialog {
@@ -723,9 +849,10 @@ table.simple td:last-child {
   flex-direction: column;
   gap: 12px;
   padding: 16px;
-  border-radius: 14px;
+  border-radius: 18px;
   background: var(--surface);
   border: 1px solid var(--border);
+  box-shadow: 0 16px 40px rgba(21, 29, 72, 0.2);
 }
 
 .paste-dialog p {
