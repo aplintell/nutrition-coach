@@ -2869,7 +2869,7 @@
     });
   }
 
-  var APP_VERSION = '1.52';
+  var APP_VERSION = '1.53';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {

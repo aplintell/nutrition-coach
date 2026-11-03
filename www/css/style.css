@@ -248,6 +248,9 @@ input[type="range"] {
   padding: 16px 16px 88px;
   max-width: 640px;
   margin: 0 auto;
+  /* Nothing inside (a label at the edge, a long word) may make the page scroll sideways. */
+  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* ---- Building blocks ---- */
@@ -706,7 +709,6 @@ label.field textarea {
   left: 50%;
   z-index: 3;
   transform: translateX(-50%);
-  max-width: 200px;
   padding: 5px 9px;
   border-radius: 8px;
   background: var(--tip-bg);
@@ -716,14 +718,15 @@ label.field textarea {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  opacity: 0;
+  max-width: min(200px, 80vw);
   pointer-events: none;
-  transition: opacity 0.12s ease;
+  /* Not laid out at all until shown, so hidden names can't widen the page. */
+  display: none;
 }
 
 .bubble:hover .bubble-name,
 .bubble:focus-visible .bubble-name {
-  opacity: 1;
+  display: block;
 }
 
 .meal-row {
