@@ -1329,9 +1329,10 @@
 
   // ---- Bubbles: select by tap, drag to the bin to delete ----
   //
-  // Tapping a bubble selects it: its name shows above it, and a recycle bin appears in the middle of
-  // the screen. Only the selected bubble can be dragged (so swiping over others still scrolls); dropped
-  // on the bin, it is deleted, with an Undo bar for a few seconds. Tapping anywhere else deselects.
+  // Tapping a bubble selects it (its name shows above it). Only the selected bubble can be dragged (so
+  // swiping over others still scrolls); while it is dragged a recycle bin shows at the bottom of the
+  // page, and dropped on it the bubble is deleted, with an Undo bar for a few seconds. Tapping
+  // anywhere else deselects.
   // Keyboard: Enter selects, Delete removes the selected one.
   var selection = null;
   var trashEl = null;
@@ -1369,7 +1370,6 @@
     clearSelection();
     bubble.classList.add('selected');
     selection = { bubble: bubble, inside: inside || [], onClear: onClear };
-    trash().hidden = false;
   }
 
   document.addEventListener('pointerdown', function (ev) {
@@ -1458,6 +1458,8 @@
         drag.ghost.style.height = circle.offsetHeight + 'px';
         document.body.appendChild(drag.ghost);
         bubble.classList.add('dragging');
+        // The bin shows only while a bubble is being dragged.
+        trash().hidden = false;
         trash().classList.add('ready');
         try {
           bubble.setPointerCapture(ev.pointerId);
@@ -1482,8 +1484,11 @@
       dragged = Date.now();
       d.ghost.remove();
       bubble.classList.remove('dragging');
+      // Check the drop spot before hiding the bin (a hidden bin has no size).
+      var onBin = !cancelled && overTrash(ev.clientX, ev.clientY);
       trash().classList.remove('ready', 'active');
-      if (!cancelled && overTrash(ev.clientX, ev.clientY)) {
+      trash().hidden = true;
+      if (onBin) {
         clearSelection();
         opts.onDelete();
       }
@@ -1628,8 +1633,8 @@
 
     if (exercises.length) {
       // Bubbles like the meal list: size by kcal burned, an icon inside, kcal below. Tapping one
-      // selects it (name above, bin in the middle) and opens its add-more box under the bubbles;
-      // dragged to the bin, it is deleted.
+      // selects it (name above) and opens its add-more box under the bubbles; dragged to the bin, it
+      // is deleted.
       var detail = h('div', { class: 'ex-detail', hidden: true });
       var bubbles = h('div', { class: 'bubbles', role: 'list' });
       var select = function (e, bubble) {
@@ -1643,12 +1648,8 @@
           detail.appendChild(h('div', { class: 'muted small' }, '☀️ ~' + fmt(e.vitamin_d_ug, 'µg') + ' µg vitamin D · '
             + (SUN_SKIN[e.sunSkin] || SUN_SKIN.arms).label.toLowerCase() + ', ' + (SUN_TIME[e.sunTime] || SUN_TIME.mild).label.toLowerCase()));
         }
-        var form = addMoreForm(e, weight);
-        detail.appendChild(form);
-        // Cursor at the end of the prefilled number, ready to edit it.
-        var input = form.querySelector('input');
-        input.focus({ preventScroll: true });
-        input.setSelectionRange(input.value.length, input.value.length);
+        // Not focused: on a phone the keyboard would cover the page; tap the box to type.
+        detail.appendChild(addMoreForm(e, weight));
       };
       exercises.forEach(function (e) {
         var size = Math.round(Math.min(BUBBLE_MAX, Math.max(BUBBLE_MIN, BUBBLE_REF * Math.sqrt((e.kcal || 0) / EX_BUBBLE_REF_KCAL))));
@@ -3071,7 +3072,7 @@
     });
   }
 
-  var APP_VERSION = '1.56';
+  var APP_VERSION = '1.57';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
