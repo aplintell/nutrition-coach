@@ -1337,16 +1337,13 @@
 
   // Exercise bubbles use their own scale (workouts burn far less than meals supply): 300 kcal = 120 px.
   var EX_BUBBLE_REF_KCAL = 300;
-  var EXERCISE_ICON = {
-    skipping: '🪢', rope: '🪢', 'sit-up': '💪', situp: '💪', plank: '💪', 'push-up': '💪', pushup: '💪', 'bench-dip': '💪',
-    'kb-halo': '🏋️', 'kb-around-world': '🏋️', 'goblet-squat': '🏋️', 'kb-goblet-curl': '🏋️', 'kb-triceps-ext': '🏋️', gym: '🏋️',
-    lunge: '🦵', 'badminton-1': '🏸', 'badminton-10': '🏸', 'badminton-15': '🏸', 'badminton-set': '🏸', badminton: '🏸',
-    'walk-min': '🚶', 'walk-km': '🚶', walk: '🚶', run: '🏃', bike: '🚴', swim: '🏊', football: '⚽', tennis: '🎾', yoga: '🧘', sunbath: '☀️'
+  // Short captions under the icons in the exercise picker (the full name shows once chosen).
+  var EXERCISE_SHORT = {
+    skipping: 'Skipping', 'sit-up': 'Sit-up', plank: 'Plank', 'push-up': 'Push-up', 'bench-dip': 'Bench dip',
+    'kb-halo': 'Halo', 'kb-around-world': 'Around world', 'goblet-squat': 'Goblet squat', lunge: 'Lunge',
+    'kb-goblet-curl': 'Goblet curl', 'kb-triceps-ext': 'Triceps', 'badminton-1': 'Badminton', 'walk-min': 'Walk (min)',
+    'walk-km': 'Walk (km)', sunbath: 'Sunbath'
   };
-
-  function exerciseIcon(type) {
-    return EXERCISE_ICON[type] || '🏃';
-  }
 
   /** A copy of list sorted by kcal, biggest first. */
   function byKcal(list, kcalOf) {
@@ -1475,10 +1472,9 @@
       };
       exercises.forEach(function (e) {
         var size = Math.round(Math.min(BUBBLE_MAX, Math.max(BUBBLE_MIN, BUBBLE_REF * Math.sqrt((e.kcal || 0) / EX_BUBBLE_REF_KCAL))));
-        var circle = h('span', { class: 'bubble-circle ex' + (e.type === 'sunbath' ? ' sun' : '') }, exerciseIcon(e.type));
+        var circle = h('span', { class: 'bubble-circle ex' + (e.type === 'sunbath' ? ' sun' : '') }, ExerciseIcons.forType(e.type));
         circle.style.width = size + 'px';
         circle.style.height = size + 'px';
-        circle.style.fontSize = Math.round(Math.max(18, size * 0.42)) + 'px';
         var bubble = h('div', {
           class: 'bubble', role: 'listitem', tabindex: '0',
           'aria-label': exerciseName(e) + ', ' + e.amount + ' ' + unitText(e.unit) + ', ~' + e.kcal + ' kcal'
@@ -1546,14 +1542,42 @@
         h('label', { class: 'field' }, 'Time of day', timeSelect)),
       h('p', { class: 'muted small', style: 'margin-top:-6px' }, 'No sunscreen, not through glass; heavy cloud means the skin makes less.'));
 
-    var typeSelect = h('select', { name: 'type' }, EXERCISES.map(function (e) {
+    var typeSelect = h('select', { name: 'type', hidden: true }, [h('option', { value: '' }, '')].concat(EXERCISES.map(function (e) {
       return h('option', { value: e.id }, e.name);
-    }));
+    })));
+    // Choose the exercise by its icon; the number comes after.
+    var picks = EXERCISES.map(function (e) {
+      var b = h('button', {
+        class: 'ex-pick', type: 'button', role: 'radio', 'aria-checked': 'false', 'aria-label': e.name, title: e.name, 'data-id': e.id,
+        onclick: function () {
+          typeSelect.value = e.id;
+          typeSelect.dispatchEvent(new Event('change'));
+          amountInput.focus();
+        }
+      }, h('span', { class: 'ex-pick-circle' + (e.id === 'sunbath' ? ' sun' : '') }, ExerciseIcons.forType(e.id)),
+        h('span', { class: 'ex-pick-name' }, EXERCISE_SHORT[e.id] || e.name));
+      return b;
+    });
+    var picker = h('div', { class: 'ex-picker', role: 'radiogroup', 'aria-label': 'Exercise' }, picks);
+    var picked = h('p', { class: 'ex-picked' }, 'Choose an exercise');
     var amountInput = h('input', { name: 'amount', type: 'number', inputmode: 'decimal', min: '0', step: 'any', placeholder: 'e.g. 20' });
     var unitLabel = h('span', null, 'Times');
     var preview = h('p', { class: 'muted small' }, '');
     function update() {
       var ex = EXERCISE_BY_ID[typeSelect.value];
+      picks.forEach(function (b) {
+        var on = b.getAttribute('data-id') === typeSelect.value;
+        b.classList.toggle('selected', on);
+        b.setAttribute('aria-checked', on ? 'true' : 'false');
+      });
+      picked.textContent = ex ? ex.name : 'Choose an exercise';
+      picked.classList.toggle('chosen', !!ex);
+      if (!ex) {
+        unitLabel.textContent = 'Times';
+        sunBox.hidden = true;
+        preview.textContent = '';
+        return;
+      }
       unitLabel.textContent = AMOUNT_LABEL[ex.unit];
       var amount = parseFloat(amountInput.value);
       var isSun = ex.id === 'sunbath';
@@ -1576,16 +1600,21 @@
     skinSelect.addEventListener('change', update);
     timeSelect.addEventListener('change', update);
 
-    var form = h('form', { hidden: true, novalidate: true },
-      h('div', { class: 'grid-2' },
-        h('label', { class: 'field' }, 'Exercise', typeSelect),
-        h('label', { class: 'field' }, unitLabel, amountInput)),
+    var form = h('form', { class: 'ex-add', hidden: true, novalidate: true },
+      typeSelect,
+      picker,
+      picked,
+      h('label', { class: 'field' }, unitLabel, amountInput),
       sunBox,
       preview,
       h('button', { class: 'btn primary', type: 'submit' }, 'Add'));
     form.addEventListener('submit', function (e) {
       e.preventDefault();
       var amount = parseFloat(amountInput.value);
+      if (!EXERCISE_BY_ID[typeSelect.value]) {
+        alert('Please choose an exercise.');
+        return;
+      }
       if (!(amount > 0)) {
         alert('Please enter the ' + AMOUNT_LABEL[EXERCISE_BY_ID[typeSelect.value].unit].toLowerCase() + '.');
         return;
@@ -1594,14 +1623,9 @@
     });
     function openAddForm() {
       form.hidden = false;
-      form.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      // Pick the exercise first, with the list already open; the number comes after.
-      typeSelect.focus();
-      try {
-        typeSelect.showPicker();
-      } catch (err) {
-        // Older WebViews can't open a dropdown from code; it stays focused for a tap.
-      }
+      form.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      // Pick the exercise first (by its icon); the number comes after.
+      (picker.querySelector('.ex-pick.selected') || picks[0]).focus({ preventScroll: true });
     }
     card.appendChild(form);
     card.openAddForm = openAddForm;
@@ -2933,7 +2957,7 @@
     });
   }
 
-  var APP_VERSION = '1.54';
+  var APP_VERSION = '1.55';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
