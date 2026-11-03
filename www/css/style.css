@@ -865,6 +865,18 @@ div.bubble {
   -webkit-touch-callout: none;
 }
 
+.bubble img {
+  -webkit-user-drag: none;
+  user-drag: none;
+  pointer-events: none;
+}
+
+/* Held long enough to drag: a small lift as feedback. */
+.bubble.held .bubble-circle {
+  transform: scale(0.94);
+  box-shadow: 0 0 0 3px var(--over), var(--shadow);
+}
+
 .bubble.selected {
   touch-action: none;
 }

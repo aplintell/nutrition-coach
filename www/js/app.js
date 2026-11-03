@@ -1329,13 +1329,14 @@
 
   // ---- Bubbles: select by tap, drag to the bin to delete ----
   //
-  // Tapping a bubble selects it (its name shows above it). Only the selected bubble can be dragged (so
-  // swiping over others still scrolls); while it is dragged a recycle bin shows at the bottom of the
-  // page, and dropped on it the bubble is deleted, with an Undo bar for a few seconds. Tapping
+  // Tapping a bubble selects it (its name shows above it). Any bubble can be dragged (a finger holds it
+  // briefly first, so a swipe still scrolls); while it is dragged a recycle bin shows at the bottom of
+  // the page, and dropped on it the bubble is deleted, with an Undo bar for a few seconds. Tapping
   // anywhere else deselects.
   // Keyboard: Enter selects, Delete removes the selected one.
   var selection = null;
   var trashEl = null;
+  var DRAG_HOLD_MS = 220;
 
   function trash() {
     if (!trashEl) {
@@ -1437,18 +1438,47 @@
         opts.onDelete();
       }
     });
+    // Any bubble can be dragged. With a mouse a drag starts as soon as it moves. With a finger it
+    // starts after a short hold (DRAG_HOLD_MS) on the bubble, so a quick swipe over the bubbles still
+    // scrolls the page; once held, the page stops scrolling for that touch (touchmove below).
     bubble.addEventListener('pointerdown', function (ev) {
-      if (!bubble.classList.contains('selected') || ev.button > 0) {
+      if (ev.button > 0) {
         return;
       }
-      drag = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, ghost: null };
+      var touch = ev.pointerType !== 'mouse';
+      var selected = bubble.classList.contains('selected');
+      drag = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, ghost: null, armed: !touch || selected, timer: null };
+      if (!drag.armed) {
+        var d = drag;
+        d.timer = setTimeout(function () {
+          d.armed = true;
+          if (navigator.vibrate) {
+            navigator.vibrate(15);
+          }
+          bubble.classList.add('held');
+        }, DRAG_HOLD_MS);
+      }
     });
+    bubble.addEventListener('touchmove', function (ev) {
+      if (drag && drag.armed) {
+        ev.preventDefault();
+      }
+    }, { passive: false });
     bubble.addEventListener('pointermove', function (ev) {
       if (!drag || ev.pointerId !== drag.id) {
         return;
       }
       if (!drag.ghost) {
-        if (Math.abs(ev.clientX - drag.x) + Math.abs(ev.clientY - drag.y) < 8) {
+        var moved = Math.abs(ev.clientX - drag.x) + Math.abs(ev.clientY - drag.y);
+        if (!drag.armed) {
+          // Moving before the hold is over: it's a scroll, not a drag.
+          if (moved > 10) {
+            clearTimeout(drag.timer);
+            drag = null;
+          }
+          return;
+        }
+        if (moved < 6) {
           return;
         }
         var circle = bubble.querySelector('.bubble-circle');
@@ -1472,12 +1502,21 @@
       drag.ghost.style.top = ev.clientY + 'px';
       trash().classList.toggle('active', overTrash(ev.clientX, ev.clientY));
     });
+    // A long press would otherwise open the image / text menu or start the browser's own image drag.
+    bubble.addEventListener('contextmenu', function (ev) {
+      ev.preventDefault();
+    });
+    bubble.addEventListener('dragstart', function (ev) {
+      ev.preventDefault();
+    });
     function end(ev, cancelled) {
       if (!drag || ev.pointerId !== drag.id) {
         return;
       }
       var d = drag;
       drag = null;
+      clearTimeout(d.timer);
+      bubble.classList.remove('held');
       if (!d.ghost) {
         return;
       }
@@ -1546,7 +1585,7 @@
         var kcal = m.nutrients.energy_kcal || 0;
         var size = Math.round(Math.min(BUBBLE_MAX, Math.max(BUBBLE_MIN, BUBBLE_REF * Math.sqrt(kcal / BUBBLE_REF_KCAL))));
         var circle = h('span', { class: 'bubble-circle' + (m.thumb ? '' : ' no-photo') },
-          m.thumb ? h('img', { src: m.thumb, alt: '' }) : '🍽️');
+          m.thumb ? h('img', { src: m.thumb, alt: '', draggable: 'false' }) : '🍽️');
         circle.style.width = size + 'px';
         circle.style.height = size + 'px';
         var bubble = h('div', {
@@ -3072,7 +3111,7 @@
     });
   }
 
-  var APP_VERSION = '1.57';
+  var APP_VERSION = '1.58';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
