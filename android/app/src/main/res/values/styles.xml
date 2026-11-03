@@ -13,11 +13,9 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
-        <!-- Light theme: white status and navigation bars with dark icons, like the app's header. -->
-        <item name="android:statusBarColor">#FFFFFF</item>
+        <!-- Status bar like the app's header until the app sets it for the chosen theme. -->
+        <item name="android:statusBarColor">#FAFBFD</item>
         <item name="android:windowLightStatusBar" tools:targetApi="m">true</item>
-        <item name="android:navigationBarColor">#FFFFFF</item>
-        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">true</item>
     </style>
 
 

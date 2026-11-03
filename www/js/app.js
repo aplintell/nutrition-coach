@@ -23,6 +23,53 @@
   // Where the data is kept, in the words shown to the user: the APK or the web version.
   var ON_DEVICE = isNative ? 'on this phone' : 'in this browser';
 
+  // ---- Theme: 'light', 'dark' or 'system' (follows the phone / computer) ----
+  // Kept in localStorage (a per-device display preference) so index.html can apply it before
+  // the page draws.
+  function currentTheme() {
+    try {
+      return localStorage.getItem('theme') || 'system';
+    } catch (e) {
+      return 'system';
+    }
+  }
+
+  var darkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+
+  function applyTheme() {
+    var t = currentTheme();
+    var dark = t === 'dark' || (t === 'system' && !!darkQuery && darkQuery.matches);
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    var bar = dark ? '#171a35' : '#fafbfd';
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      meta.setAttribute('content', bar);
+    }
+    // Android: the status bar matches the header (dark icons on light, light icons on dark).
+    if (isNative && plugins.StatusBar) {
+      plugins.StatusBar.setBackgroundColor({ color: bar }).catch(function () {});
+      plugins.StatusBar.setStyle({ style: dark ? 'DARK' : 'LIGHT' }).catch(function () {});
+    }
+  }
+
+  function setTheme(t) {
+    try {
+      localStorage.setItem('theme', t);
+    } catch (e) {
+      // Storage blocked: the choice still applies until the app is closed.
+    }
+    applyTheme();
+  }
+
+  if (darkQuery && darkQuery.addEventListener) {
+    darkQuery.addEventListener('change', function () {
+      if (currentTheme() === 'system') {
+        applyTheme();
+      }
+    });
+  }
+  applyTheme();
+
   // ---- Small helpers ----
 
   /** h('div', { class: 'card', onclick: fn }, child, 'text', [children]) */
@@ -829,7 +876,7 @@
           var arc = textR * (a1 - a0) * Math.PI / 180;
           if (sliceR >= 34 && arc >= 34) {
             var ip = rosePoint(textR, mid);
-            var inside = svg('text', { x: ip[0].toFixed(1), y: ip[1].toFixed(1), class: 'rose-inside', 'text-anchor': 'middle', 'dominant-baseline': 'central', 'aria-hidden': 'true' });
+            var inside = svg('text', { x: ip[0].toFixed(1), y: ip[1].toFixed(1), class: 'rose-inside status-' + f.status, 'text-anchor': 'middle', 'dominant-baseline': 'central', 'aria-hidden': 'true' });
             inside.textContent = opts.inside(k);
             rose.appendChild(inside);
           }
@@ -1255,10 +1302,6 @@
         nutrientBars(totals, targets)));
 
       if (isToday) {
-        // Meals and workouts have their own tabs; today shows only a one-line count of each.
-        viewEl.appendChild(h('div', { class: 'grid-2', style: 'margin:-10px 0 14px' },
-          h('a', { class: 'btn tile cream', href: '#food' }, '🍽️ ' + meals.length + (meals.length === 1 ? ' meal' : ' meals')),
-          h('a', { class: 'btn tile mint', href: '#workout' }, '🏃 ' + exercises.length + (exercises.length === 1 ? ' workout' : ' workouts') + (burned ? ' · ~' + burned + ' kcal' : ''))));
         viewEl.appendChild(planCard(key, meals, totals, targets, plan, exercises));
       } else {
         viewEl.appendChild(exerciseCard(key, exercises, profile));
@@ -1313,7 +1356,15 @@
     var key = dayKey();
     setScreen('Workout · ' + dayTitle(key), 'workout', false);
     return Promise.all([Db.getAllByIndex('exercises', 'day', key), Db.getKv('profile')]).then(function (r) {
-      viewEl.appendChild(exerciseCard(key, r[0], r[1]));
+      var card = exerciseCard(key, r[0], r[1], { floatingAdd: true });
+      viewEl.appendChild(card);
+      viewEl.appendChild(h('button', {
+        class: 'fab',
+        type: 'button',
+        onclick: function () {
+          card.openAddForm();
+        }
+      }, '+ Exercise'));
     });
   }
 
@@ -1325,7 +1376,9 @@
     });
   }
 
-  function exerciseCard(key, exercises, profile) {
+  /** opts.floatingAdd: the screen has its own "+ Exercise" button, so the card shows none. */
+  function exerciseCard(key, exercises, profile, opts) {
+    opts = opts || {};
     var weight = profile && profile.weight_kg;
     var burned = exerciseTotal(exercises);
     var card = h('div', { class: 'card' }, h('h2', null, '🏃 Exercise' + (exercises.length ? ' (~' + burned + ' kcal)' : '')));
@@ -1440,23 +1493,22 @@
       }
       addExercise(EXERCISE_BY_ID[typeSelect.value], amount).then(rerenderKeepingScroll);
     });
-    var showForm = h('button', {
-      class: 'btn',
-      type: 'button',
-      onclick: function () {
-        form.hidden = false;
-        showForm.hidden = true;
-        // Pick the exercise first, with the list already open; the number comes after.
-        typeSelect.focus();
-        try {
-          typeSelect.showPicker();
-        } catch (err) {
-          // Older WebViews can't open a dropdown from code; it stays focused for a tap.
-        }
+    function openAddForm() {
+      form.hidden = false;
+      showForm.hidden = true;
+      form.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      // Pick the exercise first, with the list already open; the number comes after.
+      typeSelect.focus();
+      try {
+        typeSelect.showPicker();
+      } catch (err) {
+        // Older WebViews can't open a dropdown from code; it stays focused for a tap.
       }
-    }, '+ Add exercise');
+    }
+    var showForm = h('button', { class: 'btn', type: 'button', hidden: !!opts.floatingAdd, onclick: openAddForm }, '+ Add exercise');
     card.appendChild(showForm);
     card.appendChild(form);
+    card.openAddForm = openAddForm;
     return card;
   }
 
@@ -2737,6 +2789,20 @@
         h('p', null, 'About $' + (s.totalCostUsd || 0).toFixed(2) + ' for ' + (s.requestCount || 0) + ' requests to Claude.'),
         h('p', { class: 'muted small' }, 'Estimated from Claude Opus 5.5 prices; see console.anthropic.com for the exact figure. A meal usually costs a few cents.')));
 
+      function themeChoice(value, title) {
+        var radio = h('input', { type: 'radio', name: 'theme', value: value });
+        radio.checked = currentTheme() === value;
+        radio.addEventListener('change', function () {
+          setTheme(value);
+        });
+        return h('label', { class: 'check-row' }, radio, h('span', null, h('strong', null, title)));
+      }
+      viewEl.appendChild(h('div', { class: 'card' },
+        h('h2', null, '🎨 Appearance'),
+        themeChoice('light', 'Light'),
+        themeChoice('dark', 'Dark'),
+        themeChoice('system', 'Same as my phone / computer')));
+
       var storageInfo = h('p', { class: 'muted small' }, '');
       if (!isNative) {
         showStorageInfo(storageInfo);
@@ -2771,7 +2837,7 @@
     });
   }
 
-  var APP_VERSION = '1.49';
+  var APP_VERSION = '1.50';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {

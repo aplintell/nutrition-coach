@@ -71,26 +71,69 @@
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-/* Light dashboard theme: white cards on a pale blue-grey page, navy text, indigo accent.
-   Status colours (met / short / over) are stepped for a white surface and checked for colour-blind
-   separation; on charts they always come with amounts and words. */
+/* Dashboard theme, light and dark (Settings > Appearance sets data-theme on <html>).
+   Light: soft-white cards on a pale blue-grey page, navy text, indigo accent. Dark: the same design
+   in deep navy. Status colours (met / short / over) are the theme's indigo, amber and pink-red,
+   checked for colour-blind separation on both surfaces; charts always show amounts too. */
 :root {
-  --bg: #f6f7fb;
-  --surface: #ffffff;
-  --surface-alt: #f2f3f8;
-  --border: #e9ebf3;
+  color-scheme: light;
+  --bg: #eff1f6;
+  --surface: #fafbfd;
+  --surface-alt: #eef0f6;
+  --border: #e1e4ee;
   --text: #151d48;
-  --text-dim: #737791;
+  --text-dim: #6e7190;
   --accent: #5d5fef;
-  --accent-soft: #eeefff;
+  --accent-soft: #e8e9ff;
   --accent-text: #ffffff;
-  --ok: #0e9f6e;
-  --under: #e8890c;
-  --over: #e5484d;
+  --ok: #5d5fef;
+  --under: #ffb23f;
+  --over: #f2557a;
   --info: #5d5fef;
   --shadow: 0 4px 20px rgba(21, 29, 72, 0.06);
-  --tile-cream: #fff4de;
-  --tile-mint: #dcfce7;
+  --tip-bg: #151d48;
+  --tip-text: #ffffff;
+  --tip-dim: rgba(255, 255, 255, 0.78);
+  --overlay: rgba(239, 241, 246, 0.92);
+  --backdrop: rgba(21, 29, 72, 0.45);
+  --zone: rgba(21, 29, 72, 0.08);
+  --warn-bg: #fff1f3;
+  --dash: #d3d6e6;
+  --tag-ok-bg: #e8e9ff;
+  --tag-ok-text: #3f41c9;
+  --tag-under-bg: #fff4de;
+  --tag-under-text: #8a5300;
+  --tag-over-bg: #ffe2e8;
+  --tag-over-text: #b0244a;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1124;
+  --surface: #171a35;
+  --surface-alt: #20244a;
+  --border: #2a2f5c;
+  --text: #eef0ff;
+  --text-dim: #a3a6c8;
+  --accent: #7c7eff;
+  --accent-soft: rgba(124, 126, 255, 0.18);
+  --accent-text: #ffffff;
+  --info: #9496ff;
+  --shadow: 0 4px 20px rgba(0, 0, 0, 0.28);
+  --tip-bg: #eef0ff;
+  --tip-text: #151d48;
+  --tip-dim: rgba(21, 29, 72, 0.72);
+  --overlay: rgba(15, 17, 36, 0.92);
+  --backdrop: rgba(0, 0, 0, 0.6);
+  --zone: rgba(255, 255, 255, 0.12);
+  --warn-bg: rgba(242, 85, 122, 0.14);
+  --dash: #3a3f6e;
+  --tag-ok-bg: rgba(124, 126, 255, 0.2);
+  --tag-ok-text: #c9caff;
+  --tag-under-bg: rgba(255, 178, 63, 0.16);
+  --tag-under-text: #ffd38a;
+  --tag-over-bg: rgba(242, 85, 122, 0.18);
+  --tag-over-text: #ffb3c4;
 }
 
 * {
@@ -268,15 +311,7 @@ p {
   box-shadow: 0 6px 16px rgba(93, 95, 239, 0.28);
 }
 
-/* Today's shortcuts to Food and Workout: pastel tiles. */
-.btn.tile {
-  border: none;
-  padding: 16px 10px;
-  border-radius: 16px;
-}
 
-.btn.tile.cream { background: var(--tile-cream); }
-.btn.tile.mint { background: var(--tile-mint); }
 
 .btn.danger {
   color: var(--over);
@@ -450,6 +485,12 @@ label.field textarea {
   pointer-events: none;
 }
 
+/* Inside a slice: white on indigo and pink-red, navy on amber. */
+.rose-inside.status-ok,
+.rose-inside.status-over {
+  fill: #ffffff;
+}
+
 /* Macronutrients: share of energy today vs the advised range. */
 .macro-table {
   margin-top: 8px;
@@ -513,7 +554,7 @@ label.field textarea {
   position: absolute;
   left: 0;
   right: 0;
-  background: rgba(21, 29, 72, 0.08);
+  background: var(--zone);
 }
 
 .ecol-fill {
@@ -566,19 +607,19 @@ label.field textarea {
   min-width: 170px;
   padding: 8px 10px;
   border-radius: 10px;
-  background: var(--text);
+  background: var(--tip-bg);
   border: none;
   box-shadow: 0 8px 24px rgba(21, 29, 72, 0.25);
   font-size: 0.78rem;
   line-height: 1.45;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--tip-dim);
   pointer-events: none;
 }
 
 .nc-tip strong {
   display: block;
   font-size: 0.95rem;
-  color: #ffffff;
+  color: var(--tip-text);
 }
 
 .nc-free {
@@ -598,9 +639,9 @@ label.field textarea {
   margin-left: 4px;
 }
 
-.tag.over { background: #ffe2e5; color: #b42318; }
-.tag.under { background: #fff4de; color: #9a5b06; }
-.tag.ok { background: #dcfce7; color: #087a52; }
+.tag.over { background: var(--tag-over-bg); color: var(--tag-over-text); }
+.tag.under { background: var(--tag-under-bg); color: var(--tag-under-text); }
+.tag.ok { background: var(--tag-ok-bg); color: var(--tag-ok-text); }
 
 /* ---- Meals ---- */
 
@@ -655,7 +696,7 @@ label.field textarea {
   justify-content: center;
   width: 100%;
   min-height: 200px;
-  border: 2px dashed #d5d8ea;
+  border: 2px dashed var(--dash);
   border-radius: 18px;
   background: var(--surface);
   color: var(--text-dim);
@@ -682,7 +723,7 @@ label.field textarea {
 }
 
 .warning {
-  background: #fff1f2;
+  background: var(--warn-bg);
   border-left: 3px solid var(--over);
   padding: 8px 10px;
   border-radius: 10px;
@@ -812,7 +853,7 @@ table.simple td:last-child {
   justify-content: center;
   gap: 14px;
   padding: 24px;
-  background: rgba(246, 247, 251, 0.92);
+  background: var(--overlay);
   text-align: center;
 }
 
@@ -838,7 +879,7 @@ table.simple td:last-child {
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(21, 29, 72, 0.45);
+  background: var(--backdrop);
 }
 
 .paste-dialog {

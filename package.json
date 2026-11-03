@@ -20,6 +20,7 @@
     "@capacitor/core": "^6.2.2",
     "@capacitor/filesystem": "^6.0.4",
     "@capacitor/share": "^6.0.4",
+    "@capacitor/status-bar": "^6.0.2",
     "zod": "^4.6.7"
   },
   "devDependencies": {
