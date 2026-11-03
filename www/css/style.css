@@ -695,6 +695,47 @@ label.field textarea {
   box-shadow: 0 0 0 3px var(--accent), var(--shadow);
 }
 
+/* Exercise bubbles: an icon on a soft accent background (sunbath on warm amber), tappable. */
+div.bubble {
+  cursor: pointer;
+}
+
+.bubble-circle.ex {
+  line-height: 1;
+}
+
+.bubble-circle.sun {
+  background: var(--tag-under-bg);
+}
+
+.bubble.selected .bubble-circle {
+  box-shadow: 0 0 0 3px var(--accent), var(--shadow);
+}
+
+/* The tapped exercise: details with Add more / Delete under the bubbles. */
+.ex-detail {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.ex-detail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ex-detail .btn {
+  margin-top: 10px;
+}
+
+.ex-detail form {
+  margin-top: 10px;
+}
+
 .bubble-kcal {
   font-size: 0.78rem;
   font-weight: 600;

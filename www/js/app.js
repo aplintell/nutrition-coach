@@ -1335,6 +1335,19 @@
   var BUBBLE_MIN = 46;
   var BUBBLE_MAX = 160;
 
+  // Exercise bubbles use their own scale (workouts burn far less than meals supply): 300 kcal = 120 px.
+  var EX_BUBBLE_REF_KCAL = 300;
+  var EXERCISE_ICON = {
+    skipping: '🪢', rope: '🪢', 'sit-up': '💪', situp: '💪', plank: '💪', 'push-up': '💪', pushup: '💪', 'bench-dip': '💪',
+    'kb-halo': '🏋️', 'kb-around-world': '🏋️', 'goblet-squat': '🏋️', 'kb-goblet-curl': '🏋️', 'kb-triceps-ext': '🏋️', gym: '🏋️',
+    lunge: '🦵', 'badminton-1': '🏸', 'badminton-10': '🏸', 'badminton-15': '🏸', 'badminton-set': '🏸', badminton: '🏸',
+    'walk-min': '🚶', 'walk-km': '🚶', walk: '🚶', run: '🏃', bike: '🚴', swim: '🏊', football: '⚽', tennis: '🎾', yoga: '🧘', sunbath: '☀️'
+  };
+
+  function exerciseIcon(type) {
+    return EXERCISE_ICON[type] || '🏃';
+  }
+
   /** A copy of list sorted by kcal, biggest first. */
   function byKcal(list, kcalOf) {
     return list.slice().sort(function (a, b) {
@@ -1419,31 +1432,82 @@
     var card = h('div', { class: 'card' }, h('h2', null, '🏃 Exercise' + (exercises.length ? ' (~' + burned + ' kcal)' : '')));
 
     if (exercises.length) {
-      card.appendChild(h('div', null, exercises.map(function (e) {
-        var row = h('div', { class: 'ex-row' },
-          h('span', { class: 'name' }, exerciseName(e) + ' · ' + e.amount + ' ' + unitText(e.unit),
-            e.vitamin_d_ug ? h('div', { class: 'muted small' }, '☀️ ~' + fmt(e.vitamin_d_ug, 'µg') + ' µg vitamin D · ' + (SUN_SKIN[e.sunSkin] || SUN_SKIN.arms).label.toLowerCase() + ', ' + (SUN_TIME[e.sunTime] || SUN_TIME.mild).label.toLowerCase()) : null),
-          h('span', { class: 'kcal' }, '~' + e.kcal + ' kcal'),
+      // Bubbles like the meal list: size by kcal burned, an icon inside, kcal below, the name on
+      // hover. Tapping one shows its details with Add more / Delete under the box; holding it for
+      // 0.5 s goes straight to adding more.
+      var detail = h('div', { class: 'ex-detail', hidden: true });
+      var bubbles = h('div', { class: 'bubbles', role: 'list' });
+      var select = function (e, bubble, addMore) {
+        bubbles.querySelectorAll('.bubble.selected').forEach(function (el) {
+          el.classList.remove('selected');
+        });
+        bubble.classList.add('selected');
+        detail.textContent = '';
+        detail.hidden = false;
+        detail.appendChild(h('div', { class: 'ex-detail-head' },
+          h('strong', null, exerciseName(e) + ' · ' + e.amount + ' ' + unitText(e.unit)),
+          h('span', { class: 'muted small' }, '~' + e.kcal + ' kcal')));
+        if (e.vitamin_d_ug) {
+          detail.appendChild(h('div', { class: 'muted small' }, '☀️ ~' + fmt(e.vitamin_d_ug, 'µg') + ' µg vitamin D · '
+            + (SUN_SKIN[e.sunSkin] || SUN_SKIN.arms).label.toLowerCase() + ', ' + (SUN_TIME[e.sunTime] || SUN_TIME.mild).label.toLowerCase()));
+        }
+        var showAddMore = function () {
+          if (!detail.querySelector('form')) {
+            detail.appendChild(addMoreForm(e, weight));
+          }
+          // Cursor at the end of the prefilled number, ready to edit it.
+          var input = detail.querySelector('form input');
+          input.focus();
+          input.setSelectionRange(input.value.length, input.value.length);
+        };
+        detail.appendChild(h('div', { class: 'btn-row' },
+          h('button', { class: 'btn', type: 'button', onclick: showAddMore }, '+ Add more'),
           h('button', {
+            class: 'btn danger',
             type: 'button',
-            'aria-label': 'Delete ' + exerciseName(e),
             onclick: function () {
               Db.remove('exercises', e.id).then(rerenderKeepingScroll);
             }
-          }, '✕'));
-        var wrap = h('div', null, row);
-        onLongPress(row, function () {
-          if (!wrap.querySelector('form')) {
-            wrap.appendChild(addMoreForm(e, weight));
+          }, 'Delete')));
+        if (addMore) {
+          showAddMore();
+        }
+      };
+      exercises.forEach(function (e) {
+        var size = Math.round(Math.min(BUBBLE_MAX, Math.max(BUBBLE_MIN, BUBBLE_REF * Math.sqrt((e.kcal || 0) / EX_BUBBLE_REF_KCAL))));
+        var circle = h('span', { class: 'bubble-circle ex' + (e.type === 'sunbath' ? ' sun' : '') }, exerciseIcon(e.type));
+        circle.style.width = size + 'px';
+        circle.style.height = size + 'px';
+        circle.style.fontSize = Math.round(Math.max(18, size * 0.42)) + 'px';
+        var bubble = h('div', {
+          class: 'bubble', role: 'listitem', tabindex: '0',
+          'aria-label': exerciseName(e) + ', ' + e.amount + ' ' + unitText(e.unit) + ', ~' + e.kcal + ' kcal'
+        },
+          h('span', { class: 'bubble-name', 'aria-hidden': 'true' }, exerciseName(e) + ' · ' + e.amount + ' ' + unitText(e.unit)),
+          circle,
+          h('span', { class: 'bubble-kcal' }, '~' + e.kcal + ' kcal'));
+        var heldAt = 0;
+        bubble.addEventListener('click', function () {
+          // The click that ends a hold would otherwise close the add-more box the hold just opened.
+          if (Date.now() - heldAt > 700) {
+            select(e, bubble, false);
           }
-          // Cursor at the end of the prefilled number, ready to edit it.
-          var input = wrap.querySelector('input');
-          input.focus();
-          input.setSelectionRange(input.value.length, input.value.length);
         });
-        return wrap;
-      })));
-      card.appendChild(h('p', { class: 'muted small' }, 'Hold an exercise for 0.5 s to add more times / minutes.'));
+        bubble.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Enter' || ev.key === ' ') {
+            ev.preventDefault();
+            select(e, bubble, false);
+          }
+        });
+        onLongPress(bubble, function () {
+          heldAt = Date.now();
+          select(e, bubble, true);
+        });
+        bubbles.appendChild(bubble);
+      });
+      card.appendChild(bubbles);
+      card.appendChild(detail);
+      card.appendChild(h('p', { class: 'muted small' }, 'Tap an exercise for details · hold it 0.5 s to add more times / minutes.'));
     } else {
       card.appendChild(h('p', { class: 'muted' }, 'No exercise yet today? Add it here and the day\'s energy target goes up to match.'));
     }
@@ -2869,7 +2933,7 @@
     });
   }
 
-  var APP_VERSION = '1.53';
+  var APP_VERSION = '1.54';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
