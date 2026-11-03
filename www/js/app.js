@@ -1,5 +1,8 @@
 (function () {
   var AI = window.NutritionAI;
+  // Language chosen in Settings: the page is translated by i18n.js; the AI is asked to answer in it too.
+  var LANG = window.I18n.lang;
+  AI.setReplyLanguage(LANG);
   var NUTRIENTS = AI.NUTRIENTS;
   var NUTRIENT_BY_KEY = {};
   NUTRIENTS.forEach(function (n) {
@@ -121,20 +124,16 @@
     return pad2(d.getHours()) + ':' + pad2(d.getMinutes());
   }
 
-  var WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
+  /** "Thu, 22 Oct 2026" (or "Th 5, 22/10/2026" in Vietnamese) for a YYYY-MM-DD key. */
   function dayTitle(key) {
-    var p = key.split('-');
-    var d = new Date(+p[0], +p[1] - 1, +p[2]);
-    return WEEKDAYS[d.getDay()] + ', ' + d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear();
+    return window.I18n.dayTitle(key);
   }
 
   function fmt(value, unit) {
     var v = Number(value) || 0;
     // Small amounts keep a decimal: they matter for vitamins and minerals (B12 1.5 µg, iron 8.5 mg).
     var digits = (unit !== 'kcal' && Math.abs(v) < 10) ? 1 : 0;
-    return v.toLocaleString('en-US', { maximumFractionDigits: digits, minimumFractionDigits: 0 });
+    return v.toLocaleString(LANG === 'vi' ? 'vi-VN' : 'en-US', { maximumFractionDigits: digits, minimumFractionDigits: 0 });
   }
 
   function fmtAmount(key, value) {
@@ -3071,6 +3070,22 @@
         });
         return h('label', { class: 'check-row' }, radio, h('span', null, h('strong', null, title)));
       }
+      function langChoice(value, title) {
+        var radio = h('input', { type: 'radio', name: 'lang', value: value });
+        radio.checked = LANG === value;
+        radio.addEventListener('change', function () {
+          window.I18n.setLang(value);
+          // Every screen is drawn again in the new language.
+          window.location.reload();
+        });
+        // Each name in its own language, so it is never translated.
+        return h('label', { class: 'check-row', translate: 'no' }, radio, h('span', null, h('strong', null, title)));
+      }
+      viewEl.appendChild(h('div', { class: 'card' },
+        h('h2', null, '🌐 Language'),
+        langChoice('en', 'English'),
+        langChoice('vi', 'Tiếng Việt')));
+
       viewEl.appendChild(h('div', { class: 'card' },
         h('h2', null, '🎨 Appearance'),
         themeChoice('light', 'Light'),
@@ -3111,7 +3126,7 @@
     });
   }
 
-  var APP_VERSION = '1.58';
+  var APP_VERSION = '1.59';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {

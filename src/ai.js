@@ -79,8 +79,23 @@ const LabsResult = z.object({
 
 const NUTRIENT_LIST = NUTRIENTS.map((n) => `${n.key} (${n.name}, ${n.unit})`).join(', ');
 
-const SYSTEM = `You are the nutrition assistant inside a personal Android app used by one person in Vietnam.
-Always write every text field in plain English, short and practical. Prefer Vietnamese dishes and foods that are easy to buy in Vietnam; a Vietnamese dish may keep its Vietnamese name with a short English description in brackets, e.g. "Phở bò (beef noodle soup)".
+// The language the AI writes its text fields in, chosen in Settings ('en' or 'vi').
+let replyLanguage = 'en';
+
+export function setReplyLanguage(lang) {
+  replyLanguage = lang === 'vi' ? 'vi' : 'en';
+}
+
+function lang() {
+  return replyLanguage === 'vi' ? 'Vietnamese' : 'English';
+}
+
+const LANGUAGE_RULE = {
+  en: 'Always write every text field in plain English, short and practical. Prefer Vietnamese dishes and foods that are easy to buy in Vietnam; a Vietnamese dish may keep its Vietnamese name with a short English description in brackets, e.g. "Phở bò (beef noodle soup)".',
+  vi: 'Always write every text field in plain Vietnamese (tiếng Việt có dấu), short and practical, for a Vietnamese reader. Prefer Vietnamese dishes and foods that are easy to buy in Vietnam, e.g. "Phở bò". JSON keys and enum values (low, medium, high, blood, urine...) stay in English exactly as specified.'
+};
+
+const SYSTEM_REST = `
 Nutrient keys and units: ${NUTRIENT_LIST}.
 Use standard food-composition knowledge (Vietnamese food composition tables, USDA) for estimates. All amounts are numbers in the unit named by the key; use 0 when a food has none of a nutrient.
 Sugar is split by source (WHO definitions), and sugar_g is always the sum of the three:
@@ -92,6 +107,11 @@ Purines are split by source, and purine_mg is always the sum of the two:
 - purine_plant_mg: purines from plant foods (beans, lentils, tofu, soy milk, vegetables, mushrooms, whole grains, seaweed, nuts), dairy and eggs. These do not raise gout risk in normal amounts.
 Take the person's health profile and lab results seriously (for example high uric acid → watch purines; high glucose/HbA1c → watch sugar and refined carbs; high LDL → watch saturated fat; kidney markers → watch protein, potassium, phosphorus, sodium).
 You are not a doctor: when a lab value or a pattern looks medically significant, say so briefly and suggest seeing a doctor, without being alarmist.`;
+
+function systemPrompt() {
+  return 'You are the nutrition assistant inside a personal Android app used by one person in Vietnam.\n'
+    + LANGUAGE_RULE[replyLanguage] + SYSTEM_REST;
+}
 
 function describeProfile(profile, labs) {
   const labLines = (labs || []).map((t) => `- [${t.type}] ${t.name}: ${t.value} ${t.unit || ''}`.trim()
@@ -146,7 +166,7 @@ function mealRequest({ imageBase64, note, profile, labs, eatenToday, exercise, n
       '2. Estimate the edible grams of each item as eaten (no bones or shells), using plates, bowls, chopsticks and hands in the photo for scale.',
       '3. For each item, take its nutrients per 100 g from food-composition data and multiply by grams / 100. Split its sugar into free_sugar_g, fruit_sugar_g and milk_sugar_g, and its purines into purine_animal_mg and purine_plant_mg, as defined above (sugar_g and purine_mg are the sums). Put those numbers in the nutrients of that item. The app adds the items up for the meal total, so do not give a total.',
       'If the photo is not food, set is_food to false and items to an empty list.',
-      'meal_name: a short English name for the meal (a Vietnamese dish may keep its name, with English in brackets). confidence: how sure you are about the portions.',
+      `meal_name: a short ${lang()} name for the meal` + (replyLanguage === 'vi' ? '.' : ' (a Vietnamese dish may keep its name, with English in brackets).') + ' confidence: how sure you are about the portions.',
       'comment: 1-3 sentences on how this meal fits this person today (considering their profile, labs and what they already ate).',
       'warnings: specific concerns for this person (e.g. high purine with high uric acid); empty list if none.'
     ].join('\n'),
@@ -206,7 +226,7 @@ function targetsRequest({ profile, labs, today }) {
       'Sugars: free_sugar_g gets a max of 10% of daily energy (energy kcal / 40 g), lowered towards 5% (kcal / 80 g) for diabetes or prediabetes, high triglycerides, high uric acid or gout, fatty liver, or a weight-loss goal; min null. sugar_g (total): min and max null. fruit_sugar_g (all min null): max 30 for diabetes or prediabetes (about 2-3 servings of whole fruit), otherwise max 60 for gout, high uric acid, high triglycerides or fatty liver (fructose raises uric acid and blood fats; a generous cap that only catches very large amounts), otherwise null. milk_sugar_g: max 12 for lactose intolerance (about what most lactose-intolerant people handle at once), otherwise min and max null.',
       'Purines (all min null): purine_animal_mg max 300 for gout, high uric acid or uric-acid kidney stones (the Japanese gout guideline keeps total dietary purines under 400 mg/day; plant purines take the rest), otherwise max 400. purine_plant_mg max 500 for gout or high uric acid (a generous cap that only catches very large amounts), otherwise null. purine_mg (total): max null.',
       'The person logs sport and workouts separately each day, and the app adds the energy of each day\'s exercise on top of these targets. So set the targets for a day WITHOUT sport or workouts: count only the activity of their job and daily life (keep heavy manual work if that is their job), even if activity_level mentions weekly training sessions.',
-      'explanation: a short English explanation of the main choices (energy, and anything changed because of labs/conditions).',
+      `explanation: a short ${lang()} explanation of the main choices (energy, and anything changed because of labs/conditions).`,
       'lab_flags: one entry per lab result that is outside its normal range or worth attention, with simple dietary advice; empty list if none.'
     ].join('\n'),
     template: {
@@ -236,7 +256,7 @@ function planRequest({ profile, labs, targets, meals, totals, exercise, now }) {
       'Totals so far:',
       JSON.stringify(totals),
       '',
-      'summary: 2-4 English sentences on how the day is going.',
+      `summary: 2-4 ${lang()} sentences on how the day is going.`,
       'lacking: nutrients still clearly below their min (amount_left in the nutrient\'s unit), most important first. Skip trivial gaps.',
       'excess: nutrients already over their max (over_by in the nutrient\'s unit), or close enough that the rest of the day must avoid them.',
       'plan: the remaining meals/snacks for TODAY ONLY that fit the time left (no breakfast if it is evening; nothing heavy late at night), with concrete Vietnamese dishes and portions that fill the gaps without adding to the excesses. why: one sentence each.',
@@ -327,7 +347,7 @@ async function ask(apiKey, request) {
     message = await client(apiKey).beta.messages.parse({
       model: MODEL,
       max_tokens: 16000,
-      system: SYSTEM,
+      system: systemPrompt(),
       messages: [{ role: 'user', content: request.images.map(imageBlock).concat([{ type: 'text', text: request.text }]) }],
       output_config: { effort: request.effort, format: betaZodOutputFormat(request.schema) },
       // If a safety check declines the request, Anthropic re-runs it on its default fallback model.
@@ -383,7 +403,7 @@ export function manualRequest(kind, args) {
   const text = [
     '📋 A request from the "My Nutrition" app. Please follow the instructions and reply with exactly one JSON block.',
     '',
-    SYSTEM,
+    systemPrompt(),
     '',
     request.images.length ? `(${request.images.length} photo(s) attached.)` : '',
     request.text,
@@ -698,7 +718,7 @@ async function askGemini(kind, args) {
     parts: request.images.map((data) => ({ inline_data: { mime_type: 'image/jpeg', data } }))
       .concat([{ text: questionText(request) }])
   }];
-  const { text } = await geminiGenerate(args.apiKey, args.speed, contents, SYSTEM);
+  const { text } = await geminiGenerate(args.apiKey, args.speed, contents, systemPrompt());
   return parseFreeReply('gemini', kind, text);
 }
 
@@ -867,7 +887,7 @@ async function chatAsk(service, apiKey, messages, read) {
 
 function chatMessages(request) {
   return [
-    { role: 'system', content: SYSTEM },
+    { role: 'system', content: systemPrompt() },
     {
       role: 'user',
       content: request.images.map((data) => ({ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + data } }))
