@@ -645,6 +645,87 @@ label.field textarea {
 
 /* ---- Meals ---- */
 
+/* The day's meals as bubbles in one box (size by kcal, photo inside, kcal under, name on hover). */
+.bubbles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 14px 12px;
+  padding: 18px 8px 6px;
+  border-radius: 16px;
+  background: var(--surface-alt);
+}
+
+.bubble {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+  text-decoration: none;
+  outline: none;
+}
+
+.bubble-circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 3px var(--surface), var(--shadow);
+  font-size: 1.4rem;
+  transition: transform 0.15s ease;
+}
+
+.bubble-circle img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bubble:hover .bubble-circle,
+.bubble:focus-visible .bubble-circle {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 3px var(--accent), var(--shadow);
+}
+
+.bubble-kcal {
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The meal name floats above its bubble only on hover / keyboard focus. */
+.bubble-name {
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  z-index: 3;
+  transform: translateX(-50%);
+  max-width: 200px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  background: var(--tip-bg);
+  color: var(--tip-text);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.bubble:hover .bubble-name,
+.bubble:focus-visible .bubble-name {
+  opacity: 1;
+}
+
 .meal-row {
   display: flex;
   align-items: center;

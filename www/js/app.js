@@ -1318,18 +1318,34 @@
     });
   }
 
+  // Meals as bubbles in one box: a bubble's area grows with the meal's kcal (diameter ∝ √kcal, so a
+  // meal twice the energy looks twice as big, not four times), with the meal photo inside, the kcal
+  // under it, and the name on hover / keyboard focus. Tapping a bubble opens the meal. The scale is
+  // fixed (1,000 kcal = 120 px), so bubbles compare across days too.
+  var BUBBLE_REF_KCAL = 1000;
+  var BUBBLE_REF = 120;
+  var BUBBLE_MIN = 46;
+  var BUBBLE_MAX = 160;
+
   function mealsCard(meals, isToday) {
     return h('div', { class: 'card' },
       h('h2', null, 'Meals (' + meals.length + ')'),
       meals.length === 0 ? h('p', { class: 'muted' }, isToday ? 'Before eating, tap "+ Meal" and take a photo of the food.' : 'No meals.') : null,
-      meals.map(function (m) {
-        return h('a', { class: 'meal-row', href: '#meal/' + m.id },
-          m.thumb ? h('img', { class: 'thumb', src: m.thumb, alt: '' }) : h('div', { class: 'thumb' }, '🍽️'),
-          h('div', { class: 'info' },
-            h('div', { class: 'name' }, m.name),
-            h('div', { class: 'muted small' }, m.time + (m.portion !== 1 ? ' · ' + Math.round(m.portion * 100) + '% portion' : ''))),
-          h('div', { class: 'kcal' }, fmt(m.nutrients.energy_kcal, 'kcal') + ' kcal'));
-      }));
+      meals.length ? h('div', { class: 'bubbles', role: 'list' }, meals.map(function (m) {
+        var kcal = m.nutrients.energy_kcal || 0;
+        var size = Math.round(Math.min(BUBBLE_MAX, Math.max(BUBBLE_MIN, BUBBLE_REF * Math.sqrt(kcal / BUBBLE_REF_KCAL))));
+        var circle = h('span', { class: 'bubble-circle' + (m.thumb ? '' : ' no-photo') },
+          m.thumb ? h('img', { src: m.thumb, alt: '' }) : '🍽️');
+        circle.style.width = size + 'px';
+        circle.style.height = size + 'px';
+        return h('a', {
+          class: 'bubble', href: '#meal/' + m.id, role: 'listitem',
+          'aria-label': m.name + ', ' + fmt(kcal, 'kcal') + ' kcal, ' + m.time
+        },
+          h('span', { class: 'bubble-name', 'aria-hidden': 'true' }, m.name),
+          circle,
+          h('span', { class: 'bubble-kcal' }, fmt(kcal, 'kcal') + ' kcal'));
+      })) : null);
   }
 
   // Food: today's meals and adding one
@@ -2837,7 +2853,7 @@
     });
   }
 
-  var APP_VERSION = '1.50';
+  var APP_VERSION = '1.51';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
