@@ -924,6 +924,12 @@ table.simple td:last-child {
   cursor: pointer;
 }
 
+/* A second floating button, on the left (a past day: "+ Exercise" left, "+ Meal" right). */
+.fab.fab-left {
+  right: auto;
+  left: 18px;
+}
+
 .busy-overlay {
   position: fixed;
   inset: 0;

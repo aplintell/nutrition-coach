@@ -1304,8 +1304,16 @@
       if (isToday) {
         viewEl.appendChild(planCard(key, meals, totals, targets, plan, exercises));
       } else {
-        viewEl.appendChild(exerciseCard(key, exercises, profile));
+        var exCard = exerciseCard(key, exercises, profile);
+        viewEl.appendChild(exCard);
         viewEl.appendChild(mealsCard(meals, false));
+        viewEl.appendChild(h('button', {
+          class: 'fab fab-left',
+          type: 'button',
+          onclick: function () {
+            exCard.openAddForm();
+          }
+        }, '+ Exercise'));
         viewEl.appendChild(h('button', {
           class: 'fab',
           type: 'button',
@@ -1327,11 +1335,20 @@
   var BUBBLE_MIN = 46;
   var BUBBLE_MAX = 160;
 
+  /** A copy of list sorted by kcal, biggest first. */
+  function byKcal(list, kcalOf) {
+    return list.slice().sort(function (a, b) {
+      return (kcalOf(b) || 0) - (kcalOf(a) || 0);
+    });
+  }
+
   function mealsCard(meals, isToday) {
     return h('div', { class: 'card' },
       h('h2', null, 'Meals (' + meals.length + ')'),
       meals.length === 0 ? h('p', { class: 'muted' }, isToday ? 'Before eating, tap "+ Meal" and take a photo of the food.' : 'No meals.') : null,
-      meals.length ? h('div', { class: 'bubbles', role: 'list' }, meals.map(function (m) {
+      meals.length ? h('div', { class: 'bubbles', role: 'list' }, byKcal(meals, function (m) {
+        return m.nutrients.energy_kcal;
+      }).map(function (m) {
         var kcal = m.nutrients.energy_kcal || 0;
         var size = Math.round(Math.min(BUBBLE_MAX, Math.max(BUBBLE_MIN, BUBBLE_REF * Math.sqrt(kcal / BUBBLE_REF_KCAL))));
         var circle = h('span', { class: 'bubble-circle' + (m.thumb ? '' : ' no-photo') },
@@ -1372,7 +1389,7 @@
     var key = dayKey();
     setScreen('Workout · ' + dayTitle(key), 'workout', false);
     return Promise.all([Db.getAllByIndex('exercises', 'day', key), Db.getKv('profile')]).then(function (r) {
-      var card = exerciseCard(key, r[0], r[1], { floatingAdd: true });
+      var card = exerciseCard(key, r[0], r[1]);
       viewEl.appendChild(card);
       viewEl.appendChild(h('button', {
         class: 'fab',
@@ -1392,9 +1409,11 @@
     });
   }
 
-  /** opts.floatingAdd: the screen has its own "+ Exercise" button, so the card shows none. */
-  function exerciseCard(key, exercises, profile, opts) {
-    opts = opts || {};
+  /** The day's exercise, biggest (kcal) first; card.openAddForm() is called by the screen's "+ Exercise" button. */
+  function exerciseCard(key, exercises, profile) {
+    exercises = byKcal(exercises, function (e) {
+      return e.kcal;
+    });
     var weight = profile && profile.weight_kg;
     var burned = exerciseTotal(exercises);
     var card = h('div', { class: 'card' }, h('h2', null, '🏃 Exercise' + (exercises.length ? ' (~' + burned + ' kcal)' : '')));
@@ -1511,7 +1530,6 @@
     });
     function openAddForm() {
       form.hidden = false;
-      showForm.hidden = true;
       form.scrollIntoView({ block: 'center', behavior: 'smooth' });
       // Pick the exercise first, with the list already open; the number comes after.
       typeSelect.focus();
@@ -1521,8 +1539,6 @@
         // Older WebViews can't open a dropdown from code; it stays focused for a tap.
       }
     }
-    var showForm = h('button', { class: 'btn', type: 'button', hidden: !!opts.floatingAdd, onclick: openAddForm }, '+ Add exercise');
-    card.appendChild(showForm);
     card.appendChild(form);
     card.openAddForm = openAddForm;
     return card;
@@ -2853,7 +2869,7 @@
     });
   }
 
-  var APP_VERSION = '1.51';
+  var APP_VERSION = '1.52';
 
   /** Web version: how much of the browser's storage the data uses, and whether it is kept for good. */
   function showStorageInfo(el) {
